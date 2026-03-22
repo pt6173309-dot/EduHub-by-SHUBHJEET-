@@ -113,6 +113,7 @@ interface ChatMessage {
 
 interface TeacherDashboardProps {
   currentUser: UserData | null;
+  setCurrentUser: (user: UserData | null) => void;
   resources: Resource[];
   notices: Notice[];
   handleDeleteResource: (id: string) => void;
@@ -122,18 +123,19 @@ interface TeacherDashboardProps {
   setSelectedResource: (res: Resource | null) => void;
   setEditingResource: (res: Resource | null) => void;
   setResourceForm: (form: any) => void;
-  activeTab: 'video' | 'note' | 'question' | 'notice' | 'profile';
-  setActiveTab: (tab: 'video' | 'note' | 'question' | 'notice' | 'profile') => void;
+  activeTab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users';
+  setActiveTab: (tab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users') => void;
 }
 
 interface StudentDashboardProps {
   currentUser: UserData | null;
+  setCurrentUser: (user: UserData | null) => void;
   resources: Resource[];
   notices: Notice[];
   studentView: 'main' | 'school' | 'self';
   setStudentView: (view: 'main' | 'school' | 'self') => void;
-  activeTab: 'video' | 'note' | 'question' | 'notice' | 'profile';
-  setActiveTab: (tab: 'video' | 'note' | 'question' | 'notice' | 'profile') => void;
+  activeTab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users';
+  setActiveTab: (tab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users') => void;
   selectedSubjectFilter: string | null;
   setSelectedSubjectFilter: (sub: string | null) => void;
   selfStudyTab: 'progress' | 'test' | 'ai';
@@ -153,11 +155,13 @@ interface StudentDashboardProps {
   chatMessages: any[];
   aiInput: string;
   setAiInput: (input: string) => void;
-  chatEndRef: React.RefObject<HTMLDivElement>;
-  onSelectResource: (res: Resource) => void;
+  chatEndRef: React.RefObject<HTMLDivElement | null>;
+  setSelectedResource: (res: Resource | null) => void;
 }
 
 interface MainAdminDashboardProps {
+  currentUser: UserData | null;
+  setCurrentUser: (user: UserData | null) => void;
   users: UserData[];
   resources: Resource[];
   notices: Notice[];
@@ -171,6 +175,54 @@ interface MainAdminDashboardProps {
   adminUserTab: 'students' | 'teachers';
   setAdminUserTab: (tab: 'students' | 'teachers') => void;
   setSelectedResource: (res: Resource | null) => void;
+  setEditingResource: (res: Resource | null) => void;
+  setResourceForm: (form: any) => void;
+}
+
+interface DashboardViewProps {
+  currentUser: UserData | null;
+  setCurrentUser: (user: UserData | null) => void;
+  handleLogout: () => void;
+  showResourceForm: boolean;
+  setShowResourceForm: (show: boolean) => void;
+  showNoticeForm: boolean;
+  setShowNoticeForm: (show: boolean) => void;
+  users: UserData[];
+  resources: Resource[];
+  notices: Notice[];
+  handleDeleteUser: (id: string) => void;
+  handleDeleteResource: (id: string) => void;
+  handleDeleteNotice: (id: string) => void;
+  studentView: 'main' | 'school' | 'self';
+  setStudentView: (view: 'main' | 'school' | 'self') => void;
+  activeTab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users';
+  setActiveTab: (tab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users') => void;
+  selectedSubjectFilter: string | null;
+  setSelectedSubjectFilter: (sub: string | null) => void;
+  selfStudyTab: 'progress' | 'test' | 'ai';
+  setSelfStudyTab: (tab: 'progress' | 'test' | 'ai') => void;
+  aiPlan: string | null;
+  setAiPlan: (plan: string | null) => void;
+  aiPlanDetails: any;
+  setAiPlanDetails: (details: any) => void;
+  isAiLoading: boolean;
+  handleAiAsk: (mode: 'chat' | 'plan' | 'test' | 'evaluate', prompt?: string) => void;
+  currentTest: any;
+  setCurrentTest: (test: any) => void;
+  testAnswers: Record<number, string>;
+  setTestAnswers: (answers: Record<number, string>) => void;
+  testResult: any;
+  setTestResult: (result: any) => void;
+  chatMessages: any[];
+  aiInput: string;
+  setAiInput: (input: string) => void;
+  chatEndRef: React.RefObject<HTMLDivElement | null>;
+  onSelectResource: (res: Resource) => void;
+  adminUserTab: 'students' | 'teachers';
+  setAdminUserTab: (tab: 'students' | 'teachers') => void;
+  setSelectedResource: (res: Resource | null) => void;
+  setEditingResource: (res: Resource | null) => void;
+  setResourceForm: (form: any) => void;
 }
 
 enum OperationType {
@@ -296,55 +348,46 @@ const LoginView: React.FC<LoginViewProps> = ({ handleLogin, isUploading, setView
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="glass-panel p-5 sm:p-8 rounded-3xl max-w-md w-full border-cyber-blue/20 relative z-10"
+        className="glass-panel p-6 sm:p-10 rounded-[2.5rem] max-w-md w-full border-cyber-blue/20 relative z-10"
       >
-        <div className="text-center mb-5 sm:mb-8">
-          <motion.div 
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: 'spring', damping: 12 }}
-            className="bg-cyber-blue/20 w-14 h-14 sm:w-20 sm:h-20 rounded-2xl flex items-center justify-center mx-auto mb-3 sm:mb-4 border border-cyber-blue/40 shadow-[0_0_20px_rgba(0,243,255,0.3)]"
-          >
-            <GraduationCap className="text-cyber-blue w-8 h-8 sm:w-12 sm:h-12" />
-          </motion.div>
-          <h1 className="text-xl sm:text-4xl font-orbitron font-black text-white tracking-tighter neon-text mb-1 sm:mb-2">EDUHUB</h1>
-          <p className="text-cyber-blue/70 font-rajdhani font-bold uppercase tracking-[0.2em] text-[8px] sm:text-sm">Neural Learning Interface</p>
+        <div className="text-center mb-8 sm:mb-12">
+          <div className="inline-block p-3 sm:p-4 bg-cyber-blue/10 rounded-2xl mb-4 sm:mb-6 border border-cyber-blue/20">
+            <Cpu className="w-8 h-8 sm:w-12 sm:h-12 text-cyber-blue animate-pulse" />
+          </div>
+          <h1 className="text-3xl sm:text-5xl font-orbitron font-black text-white tracking-tighter mb-2 neon-text">SHIKSHA</h1>
+          <p className="text-cyber-blue/60 font-rajdhani font-bold uppercase tracking-[0.3em] text-[10px] sm:text-xs">Neural Learning Interface</p>
         </div>
 
-        <div className="flex gap-1 sm:gap-2 mb-6 sm:mb-8 p-1 bg-white/5 rounded-xl border border-white/10">
-          {(['student', 'teacher', 'main-admin'] as const).map(r => (
+        <div className="flex bg-white/5 p-1.5 rounded-2xl mb-6 sm:mb-8 border border-white/10">
+          {(['student', 'teacher', 'main-admin'] as UserRole[]).map((role) => (
             <button
-              key={r}
-              onClick={() => setLoginRole(r)}
-              className={`flex-1 py-2 sm:py-2.5 text-[8px] sm:text-[10px] font-orbitron font-bold rounded-lg transition-all uppercase tracking-wider ${
-                loginRole === r ? 'bg-cyber-blue text-black shadow-[0_0_15px_rgba(0,243,255,0.5)]' : 'text-white/50 hover:text-white/80'
-              }`}
+              key={role}
+              onClick={() => setLoginRole(role)}
+              className={`flex-1 py-2 sm:py-3 rounded-xl text-[10px] sm:text-xs font-orbitron font-black transition-all uppercase tracking-tighter ${loginRole === role ? 'bg-cyber-blue text-black shadow-[0_0_15px_rgba(0,243,255,0.4)]' : 'text-white/40 hover:text-white'}`}
             >
-              {r.replace('-', ' ')}
+              {role.replace('-', ' ')}
             </button>
           ))}
         </div>
 
         <div className="space-y-4 sm:space-y-6">
-          <div>
-            <label className="block text-[8px] sm:text-[10px] font-orbitron font-bold text-cyber-blue/60 mb-1 sm:mb-2 ml-1 uppercase tracking-widest">
-              {loginRole === 'student' ? 'Student ID' : loginRole === 'teacher' ? 'Teacher ID' : 'Admin Access'}
-            </label>
-            <div className="relative group">
+          <div className="group">
+            <label className="block text-[10px] sm:text-xs font-orbitron font-bold text-cyber-blue/60 mb-2 uppercase tracking-widest ml-1">Access ID</label>
+            <div className="relative">
               <User className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-cyber-blue/40 w-4 h-4 sm:w-5 sm:h-5 group-focus-within:text-cyber-blue transition-colors" />
               <input 
                 type="text" 
                 value={loginId}
                 onChange={(e) => setLoginId(e.target.value)}
                 className="w-full pl-10 sm:pl-12 pr-4 py-3 sm:py-4 bg-white/5 border border-white/10 rounded-xl focus:border-cyber-blue/50 focus:ring-1 focus:ring-cyber-blue/20 outline-none transition-all font-rajdhani text-base sm:text-lg tracking-wider text-white"
-                placeholder={loginRole === 'student' ? "STU-XXXX" : loginRole === 'teacher' ? "TCH-XXXX" : "ADMIN_AUTH"}
+                placeholder={loginRole === 'student' ? 'STU123' : loginRole === 'teacher' ? 'TCH123' : 'ADMIN_ID'}
               />
             </div>
           </div>
 
-          <div>
-            <label className="block text-[8px] sm:text-[10px] font-orbitron font-bold text-cyber-blue/60 mb-1 sm:mb-2 ml-1 uppercase tracking-widest">Security Key</label>
-            <div className="relative group">
+          <div className="group">
+            <label className="block text-[10px] sm:text-xs font-orbitron font-bold text-cyber-blue/60 mb-2 uppercase tracking-widest ml-1">Security Key</label>
+            <div className="relative">
               <Lock className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-cyber-blue/40 w-4 h-4 sm:w-5 sm:h-5 group-focus-within:text-cyber-blue transition-colors" />
               <input 
                 type="password" 
@@ -392,9 +435,10 @@ interface SignupViewProps {
   handleSignup: (data: any) => void;
   setView: (view: 'login' | 'signup' | 'dashboard') => void;
   signupType: UserRole;
+  isUploading: boolean;
 }
 
-const SignupView: React.FC<SignupViewProps> = ({ handleSignup, setView, signupType }) => {
+const SignupView: React.FC<SignupViewProps> = ({ handleSignup, setView, signupType, isUploading }) => {
   const [formData, setFormData] = useState({
     name: '',
     studentId: '',
@@ -547,7 +591,7 @@ const SignupView: React.FC<SignupViewProps> = ({ handleSignup, setView, signupTy
         <button 
           onClick={() => handleSignup(formData)}
           disabled={isUploading}
-          className="w-full cyber-button bg-cyber-purple text-white font-orbitron font-black py-4 sm:py-5 rounded-xl shadow-[0_0_20px_rgba(157,0,255,0.3)] transition-all mt-6 sm:mt-8 flex items-center justify-center gap-2 disabled:opacity-50 uppercase tracking-tighter text-xs sm:text-base"
+          className="w-full cyber-button bg-cyber-purple hover:bg-white text-black font-orbitron font-black py-3.5 sm:py-5 rounded-xl shadow-[0_0_20px_rgba(157,0,255,0.3)] transition-all mt-6 sm:mt-10 flex items-center justify-center gap-2 disabled:opacity-50 uppercase tracking-tighter text-xs sm:text-base"
         >
           {isUploading ? (
             <>
@@ -686,6 +730,121 @@ const NoticeCard = ({ notice, onDelete }: { notice: Notice, onDelete?: () => voi
 
     <div className="mt-3 text-[8px] sm:text-[10px] text-white/30 font-rajdhani font-bold uppercase tracking-widest">— {notice.authorName}</div>
   </motion.div>
+);
+
+const ResourceModal = ({ resource, onClose }: { resource: Resource, onClose: () => void }) => (
+  <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="glass-panel w-full max-w-2xl max-h-[90vh] rounded-[40px] border border-white/10 flex flex-col overflow-hidden"
+    >
+      <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/5">
+        <div className="flex items-center gap-3">
+          <div className={`p-2 rounded-lg ${resource.type === 'video' ? 'bg-red-500/10 text-red-400' : resource.type === 'note' ? 'bg-cyber-blue/10 text-cyber-blue' : 'bg-amber-500/10 text-amber-400'}`}>
+            {resource.type === 'video' && <Video className="w-5 h-5" />}
+            {resource.type === 'note' && <FileText className="w-5 h-5" />}
+            {resource.type === 'question' && <HelpCircle className="w-5 h-5" />}
+          </div>
+          <div>
+            <h3 className="text-lg sm:text-xl font-orbitron font-black text-white tracking-tighter uppercase">{resource.title}</h3>
+            <p className="text-[10px] font-rajdhani font-bold text-white/40 uppercase tracking-widest">{resource.subject} • {resource.className}</p>
+          </div>
+        </div>
+        <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-all text-white/40 hover:text-white">
+          <X className="w-6 h-6" />
+        </button>
+      </div>
+      <div className="p-6 sm:p-8 overflow-y-auto custom-scrollbar flex-1">
+        <div className="prose prose-invert max-w-none">
+          <div className="text-white/80 font-rajdhani text-base sm:text-lg leading-relaxed">
+            <ReactMarkdown>
+              {resource.content}
+            </ReactMarkdown>
+          </div>
+        </div>
+        {resource.fileUrl && (
+          <div className="mt-8 p-4 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Plus className="w-5 h-5 text-cyber-blue" />
+              <div>
+                <p className="text-xs font-orbitron font-bold text-white uppercase tracking-wider">Attachment</p>
+                <p className="text-[10px] font-rajdhani font-bold text-white/40">{resource.fileName || 'Resource File'}</p>
+              </div>
+            </div>
+            <a 
+              href={resource.fileUrl} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="px-4 py-2 bg-cyber-blue text-black rounded-xl font-orbitron font-black text-xs hover:bg-white transition-all uppercase tracking-tighter"
+            >
+              Download
+            </a>
+          </div>
+        )}
+      </div>
+      <div className="p-4 bg-white/5 border-t border-white/10 text-center">
+        <p className="text-[10px] font-rajdhani font-bold text-white/20 uppercase tracking-[0.3em]">Neural Resource Interface • Shiksha AI</p>
+      </div>
+    </motion.div>
+  </div>
+);
+
+const NoticeModal = ({ notice, onClose }: { notice: Notice, onClose: () => void }) => (
+  <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="glass-panel w-full max-w-xl rounded-[40px] border border-white/10 flex flex-col overflow-hidden"
+    >
+      <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/5">
+        <div className="flex items-center gap-3">
+          <div className={`p-2 rounded-lg ${notice.type === 'school' ? 'bg-cyber-purple/10 text-cyber-purple' : 'bg-cyber-blue/10 text-cyber-blue'}`}>
+            <AlertCircle className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-lg sm:text-xl font-orbitron font-black text-white tracking-tighter uppercase">{notice.title}</h3>
+            <p className="text-[10px] font-rajdhani font-bold text-white/40 uppercase tracking-widest">{notice.type === 'school' ? 'School Wide' : notice.subject}</p>
+          </div>
+        </div>
+        <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-all text-white/40 hover:text-white">
+          <X className="w-6 h-6" />
+        </button>
+      </div>
+      <div className="p-6 sm:p-8 overflow-y-auto custom-scrollbar">
+        <p className="text-white/80 font-rajdhani text-base sm:text-lg leading-relaxed whitespace-pre-wrap mb-6">
+          {notice.content}
+        </p>
+        {notice.fileUrl && (
+          <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <FileText className="w-5 h-5 text-cyber-purple" />
+              <div>
+                <p className="text-xs font-orbitron font-bold text-white uppercase tracking-wider">Official Document</p>
+                <p className="text-[10px] font-rajdhani font-bold text-white/40">{notice.fileName || 'Notice Attachment'}</p>
+              </div>
+            </div>
+            <a 
+              href={notice.fileUrl} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="px-4 py-2 bg-cyber-purple text-white rounded-xl font-orbitron font-black text-xs hover:bg-white hover:text-black transition-all uppercase tracking-tighter"
+            >
+              View
+            </a>
+          </div>
+        )}
+        <div className="mt-8 pt-6 border-t border-white/5 flex justify-between items-center">
+          <div className="text-[10px] font-rajdhani font-bold text-white/30 uppercase tracking-widest">
+            Posted: {new Date(notice.createdAt?.toDate()).toLocaleDateString()}
+          </div>
+          <div className="text-[10px] font-rajdhani font-bold text-white/30 uppercase tracking-widest">
+            By: {notice.authorName}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  </div>
 );
 
 
@@ -972,8 +1131,6 @@ interface ProfileSectionProps {
   currentUser: UserData | null;
   setCurrentUser: (user: UserData | null) => void;
   resources: Resource[];
-  editingProfile: boolean;
-  setEditingProfile: (editing: boolean) => void;
   setEditingResource: (res: Resource | null) => void;
   setResourceForm: (form: any) => void;
   setShowResourceForm: (show: boolean) => void;
@@ -985,14 +1142,13 @@ const ProfileSection = ({
   currentUser, 
   setCurrentUser, 
   resources, 
-  editingProfile, 
-  setEditingProfile, 
   setEditingResource, 
   setResourceForm, 
   setShowResourceForm, 
   handleDeleteResource,
   setSelectedResource
 }: ProfileSectionProps) => {
+    const [editingProfile, setEditingProfile] = useState(false);
     const [profileData, setProfileData] = useState({ ...currentUser });
     const userResources = resources.filter(r => r.authorId === currentUser?.uid);
 
@@ -1113,26 +1269,11 @@ const ProfileSection = ({
 
 // --- Dashboard Components ---
 
-interface MainAdminDashboardProps {
-  users: UserData[];
-  resources: Resource[];
-  notices: Notice[];
-  handleDeleteUser: (id: string) => void;
-  handleDeleteResource: (id: string) => void;
-  handleDeleteNotice: (id: string) => void;
-  setShowResourceForm: (show: boolean) => void;
-  setShowNoticeForm: (show: boolean) => void;
-  activeTab: any;
-  setActiveTab: (tab: any) => void;
-  adminUserTab: 'students' | 'teachers';
-  setAdminUserTab: (tab: 'students' | 'teachers') => void;
-  setSelectedResource: (res: Resource | null) => void;
-}
-
 const MainAdminDashboard = ({ 
-  users, resources, notices, handleDeleteUser, handleDeleteResource, 
-  handleDeleteNotice, setShowResourceForm, setShowNoticeForm, 
-  activeTab, setActiveTab, adminUserTab, setAdminUserTab, setSelectedResource 
+  currentUser, setCurrentUser, users, resources, notices, handleDeleteUser, 
+  handleDeleteResource, handleDeleteNotice, setShowResourceForm, 
+  setShowNoticeForm, activeTab, setActiveTab, adminUserTab, 
+  setAdminUserTab, setSelectedResource, setEditingResource, setResourceForm
 }: MainAdminDashboardProps) => (
   <div className="space-y-6 sm:space-y-8">
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
@@ -1159,41 +1300,29 @@ const MainAdminDashboard = ({
       </div>
     </div>
 
-    <div className="flex gap-2 sm:gap-4 mb-6 p-1 bg-white/5 rounded-2xl border border-white/10">
-      <button 
-        onClick={() => setActiveTab('admin-resources')}
-        className={`flex-1 py-3 sm:py-4 rounded-xl font-orbitron font-bold transition-all text-[10px] sm:text-sm uppercase tracking-wider ${activeTab === 'admin-resources' ? 'bg-cyber-blue text-black shadow-[0_0_15px_rgba(0,243,255,0.3)]' : 'text-white/40 hover:text-white/60'}`}
-      >
-        Resources
-      </button>
-      <button 
-        onClick={() => setActiveTab('admin-users')}
-        className={`flex-1 py-3 sm:py-4 rounded-xl font-orbitron font-bold transition-all text-[10px] sm:text-sm uppercase tracking-wider ${activeTab === 'admin-users' ? 'bg-cyber-purple text-white shadow-[0_0_15px_rgba(157,0,255,0.3)]' : 'text-white/40 hover:text-white/60'}`}
-      >
-        Users
-      </button>
+    <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 sm:gap-4">
+      {[
+        { id: 'video', label: 'Videos', icon: Video, color: 'bg-red-500/20 text-red-400' },
+        { id: 'note', label: 'Notes', icon: FileText, color: 'bg-cyber-blue/20 text-cyber-blue' },
+        { id: 'question', label: 'Practice', icon: HelpCircle, color: 'bg-amber-500/20 text-amber-400' },
+        { id: 'notice', label: 'Notices', icon: AlertCircle, color: 'bg-cyber-purple/20 text-cyber-purple' },
+        { id: 'users', label: 'Users', icon: User, color: 'bg-emerald-500/20 text-emerald-400' },
+        { id: 'profile', label: 'Profile', icon: User, color: 'bg-slate-500/20 text-slate-400' },
+      ].map(box => (
+        <button
+          key={box.id}
+          onClick={() => setActiveTab(box.id as any)}
+          className={`aspect-square p-1.5 sm:p-4 rounded-xl sm:rounded-3xl border transition-all flex flex-col items-center justify-center gap-1 sm:gap-2 ${activeTab === box.id ? 'border-cyber-blue bg-cyber-blue/10 shadow-[0_0_15px_rgba(0,243,255,0.2)]' : 'glass-panel border-white/10 hover:border-white/20'}`}
+        >
+          <div className={`p-1 sm:p-2.5 rounded-lg sm:rounded-xl ${box.color}`}>
+            <box.icon className="w-3.5 h-3.5 sm:w-6 sm:h-6" />
+          </div>
+          <span className="font-orbitron font-bold text-white text-[7px] sm:text-xs uppercase tracking-wider text-center leading-tight">{box.label}</span>
+        </button>
+      ))}
     </div>
 
-    {activeTab === 'admin-resources' ? (
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <h3 className="text-lg sm:text-xl font-orbitron font-black text-white tracking-tighter uppercase">All Resources</h3>
-          <button onClick={() => setShowResourceForm(true)} className="cyber-button bg-cyber-blue text-black px-4 sm:px-6 py-2 rounded-xl font-orbitron font-black flex items-center gap-2 text-[10px] sm:text-sm uppercase tracking-tighter">
-            <Plus className="w-4 h-4 sm:w-5 sm:h-5" /> Add New
-          </button>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {resources.map(res => (
-            <ResourceCard 
-              key={res.id} 
-              resource={res} 
-              onDelete={() => handleDeleteResource(res.id)}
-              setSelectedResource={setSelectedResource}
-            />
-          ))}
-        </div>
-      </div>
-    ) : (
+    {activeTab === 'users' ? (
       <div className="space-y-6">
         <div className="flex gap-2 sm:gap-4 p-1 bg-white/5 rounded-2xl border border-white/10 w-fit">
           <button 
@@ -1246,23 +1375,56 @@ const MainAdminDashboard = ({
           </div>
         </div>
       </div>
+    ) : activeTab === 'profile' ? (
+      <ProfileSection 
+        currentUser={currentUser}
+        setCurrentUser={setCurrentUser}
+        resources={resources}
+        setEditingResource={setEditingResource}
+        setResourceForm={setResourceForm}
+        setShowResourceForm={setShowResourceForm}
+        handleDeleteResource={handleDeleteResource}
+        setSelectedResource={setSelectedResource}
+      />
+    ) : activeTab === 'notice' ? (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <h3 className="text-lg sm:text-xl font-orbitron font-black text-white tracking-tighter uppercase">All Notices</h3>
+          <button onClick={() => setShowNoticeForm(true)} className="cyber-button bg-cyber-purple text-white px-4 sm:px-6 py-2 rounded-xl font-orbitron font-black flex items-center gap-2 text-[10px] sm:text-sm uppercase tracking-tighter">
+            <Plus className="w-4 h-4 sm:w-5 sm:h-5" /> Post Notice
+          </button>
+        </div>
+        <div className="grid grid-cols-1 gap-4">
+          {notices.map(n => (
+            <NoticeCard key={n.id} notice={n} onDelete={() => handleDeleteNotice(n.id)} />
+          ))}
+        </div>
+      </div>
+    ) : (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <h3 className="text-lg sm:text-xl font-orbitron font-black text-white tracking-tighter uppercase capitalize">{activeTab} Resources</h3>
+          <button onClick={() => setShowResourceForm(true)} className="cyber-button bg-cyber-blue text-black px-4 sm:px-6 py-2 rounded-xl font-orbitron font-black flex items-center gap-2 text-[10px] sm:text-sm uppercase tracking-tighter">
+            <Plus className="w-4 h-4 sm:w-5 sm:h-5" /> Add New
+          </button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {resources.filter(r => r.type === activeTab).map(res => (
+            <ResourceCard 
+              key={res.id} 
+              resource={res} 
+              onDelete={() => handleDeleteResource(res.id)}
+              setSelectedResource={setSelectedResource}
+            />
+          ))}
+        </div>
+      </div>
     )}
   </div>
 );
 
-interface TeacherDashboardProps {
-  currentUser: UserData | null;
-  resources: Resource[];
-  notices: Notice[];
-  handleDeleteResource: (id: string) => void;
-  handleDeleteNotice: (id: string) => void;
-  setShowResourceForm: (show: boolean) => void;
-  setShowNoticeForm: (show: boolean) => void;
-  setSelectedResource: (res: Resource | null) => void;
-}
-
 const TeacherDashboard = ({ 
-  currentUser, resources, notices, handleDeleteResource, 
+  currentUser, setCurrentUser, resources, notices, handleDeleteResource, 
   handleDeleteNotice, setShowResourceForm, setShowNoticeForm, 
   setSelectedResource, setEditingResource, setResourceForm, 
   activeTab, setActiveTab 
@@ -1292,10 +1454,8 @@ const TeacherDashboard = ({
     {activeTab === 'profile' ? (
       <ProfileSection 
         currentUser={currentUser}
-        setCurrentUser={() => {}} // This should be passed if needed, but ProfileSection uses it locally for state
+        setCurrentUser={setCurrentUser}
         resources={resources}
-        editingProfile={false} // Local state in ProfileSection
-        setEditingProfile={() => {}}
         setEditingResource={setEditingResource}
         setResourceForm={setResourceForm}
         setShowResourceForm={setShowResourceForm}
@@ -1383,7 +1543,7 @@ const AppContent: React.FC = () => {
   const [selectedNotice, setSelectedNotice] = useState<Notice | null>(null);
 
   // Dashboard Navigation State
-  const [activeTab, setActiveTab] = useState<'video' | 'note' | 'question' | 'notice' | 'profile' | 'admin-users' | 'admin-resources'>('video');
+  const [activeTab, setActiveTab] = useState<'video' | 'note' | 'question' | 'notice' | 'profile' | 'users'>('video');
   const [adminUserTab, setAdminUserTab] = useState<'students' | 'teachers'>('students');
   const [studentView, setStudentView] = useState<'main' | 'school' | 'self'>('main');
   const [selfStudyTab, setSelfStudyTab] = useState<'progress' | 'test' | 'ai'>('progress');
@@ -2298,82 +2458,17 @@ const LoginView = () => {
 
 
 
-const TeacherDashboard = ({ 
-  currentUser, resources, notices, handleDeleteResource, 
-  handleDeleteNotice, setShowResourceForm, setShowNoticeForm, 
-  setSelectedResource, setEditingResource, setResourceForm, 
-  activeTab, setActiveTab 
-}: TeacherDashboardProps) => (
-    <div className="space-y-6 sm:space-y-8">
-      <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 sm:gap-4">
-        {[
-          { id: 'video', label: 'Videos', icon: Video, color: 'bg-red-500/20 text-red-400' },
-          { id: 'note', label: 'Notes', icon: FileText, color: 'bg-cyber-blue/20 text-cyber-blue' },
-          { id: 'question', label: 'Practice', icon: HelpCircle, color: 'bg-amber-500/20 text-amber-400' },
-          { id: 'notice', label: 'Notices', icon: AlertCircle, color: 'bg-cyber-purple/20 text-cyber-purple' },
-          { id: 'profile', label: 'Profile', icon: User, color: 'bg-emerald-500/20 text-emerald-400' },
-        ].map(box => (
-          <button
-            key={box.id}
-            onClick={() => setActiveTab(box.id as any)}
-            className={`aspect-square p-1.5 sm:p-4 rounded-xl sm:rounded-3xl border transition-all flex flex-col items-center justify-center gap-1 sm:gap-2 ${activeTab === box.id ? 'border-cyber-blue bg-cyber-blue/10 shadow-[0_0_15px_rgba(0,243,255,0.2)]' : 'glass-panel border-white/10 hover:border-white/20'}`}
-          >
-            <div className={`p-1 sm:p-2.5 rounded-lg sm:rounded-xl ${box.color}`}>
-              <box.icon className="w-3.5 h-3.5 sm:w-6 sm:h-6" />
-            </div>
-            <span className="font-orbitron font-bold text-white text-[7px] sm:text-xs uppercase tracking-wider text-center leading-tight">{box.label}</span>
-          </button>
-        ))}
-      </div>
 
-      {activeTab === 'profile' ? (
-        <ProfileSection />
-      ) : activeTab === 'notice' ? (
-        <div className="space-y-6">
-          <div className="flex justify-between items-center">
-            <h3 className="text-lg sm:text-xl font-orbitron font-black text-white tracking-tighter uppercase">Subject Notices</h3>
-            <button onClick={() => setShowNoticeForm(true)} className="cyber-button bg-cyber-purple text-white px-4 sm:px-6 py-2 rounded-xl font-orbitron font-black flex items-center gap-2 text-[10px] sm:text-sm uppercase tracking-tighter">
-              <Plus className="w-4 h-4 sm:w-5 sm:h-5" /> Post Notice
-            </button>
-          </div>
-          <div className="grid grid-cols-1 gap-4">
-            {notices.filter(n => n.authorId === currentUser?.uid).map(n => (
-              <NoticeCard key={n.id} notice={n} onDelete={() => handleDeleteNotice(n.id)} />
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          <div className="flex justify-between items-center">
-            <h3 className="text-lg sm:text-xl font-orbitron font-black text-white tracking-tighter uppercase capitalize">{activeTab} Lectures</h3>
-            <button onClick={() => { setEditingResource(null); setResourceForm({ title: '', content: '', type: activeTab as any, subject: '', className: '' }); setShowResourceForm(true); }} className="cyber-button bg-cyber-blue text-black px-4 sm:px-6 py-2 rounded-xl font-orbitron font-black flex items-center gap-2 text-[10px] sm:text-sm uppercase tracking-tighter">
-              <Plus className="w-4 h-4 sm:w-5 sm:h-5" /> Add New
-            </button>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {resources.filter(r => r.type === activeTab && r.authorId === currentUser?.uid).map(res => (
-              <ResourceCard 
-                key={res.id} 
-                resource={res} 
-                onEdit={() => { setEditingResource(res); setResourceForm(res); setShowResourceForm(true); }}
-                onDelete={() => handleDeleteResource(res.id)}
-                setSelectedResource={setSelectedResource}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
+
 
 const StudentDashboard = ({ 
-  currentUser, resources, notices, studentView, setStudentView, 
+  currentUser, setCurrentUser, resources, notices, studentView, setStudentView, 
   activeTab, setActiveTab, selectedSubjectFilter, setSelectedSubjectFilter, 
   selfStudyTab, setSelfStudyTab, aiPlan, setAiPlan, aiPlanDetails, 
   setAiPlanDetails, isAiLoading, handleAiAsk, currentTest, 
   setCurrentTest, testAnswers, setTestAnswers, testResult, 
   setTestResult, chatMessages, aiInput, setAiInput, 
-  chatEndRef, onSelectResource 
+  chatEndRef, setSelectedResource 
 }: StudentDashboardProps) => {
     const student = currentUser as UserData;
     const studentSubjects = CLASS_SUBJECTS[student.class!] || [];
@@ -2480,7 +2575,16 @@ const StudentDashboard = ({
 
           <div className="mt-12">
             {activeTab === 'profile' ? (
-              <ProfileSection />
+              <ProfileSection 
+                currentUser={currentUser}
+                setCurrentUser={setCurrentUser}
+                resources={resources}
+                setEditingResource={() => {}}
+                setResourceForm={() => {}}
+                setShowResourceForm={() => {}}
+                handleDeleteResource={() => {}}
+                setSelectedResource={setSelectedResource}
+              />
             ) : activeTab === 'notice' ? (
               <div className="space-y-6">
                 <h3 className="text-lg sm:text-xl font-orbitron font-black text-white tracking-tighter uppercase">Notices & Updates</h3>
@@ -2512,7 +2616,7 @@ const StudentDashboard = ({
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                   {filteredResources.map(res => (
-                    <ResourceCard key={res.id} resource={res} />
+                    <ResourceCard key={res.id} resource={res} setSelectedResource={setSelectedResource} />
                   ))}
                   {filteredResources.length === 0 && (
                     <div className="col-span-full py-12 sm:py-20 text-center glass-panel rounded-3xl border border-dashed border-white/10">
@@ -2851,8 +2955,16 @@ const StudentDashboard = ({
                 </div>
               </div>
             )}
-   const DashboardView = ({ 
+          </div>
+        </div>
+      );
+    }
+    return null;
+};
+
+const DashboardView = ({ 
   currentUser, 
+  setCurrentUser,
   handleLogout, 
   showResourceForm, 
   setShowResourceForm, 
@@ -2888,56 +3000,13 @@ const StudentDashboard = ({
   aiInput, 
   setAiInput, 
   chatEndRef, 
-  onSelectResource,
-  adminUserTab,
+  onSelectResource, 
+  adminUserTab, 
   setAdminUserTab,
   setSelectedResource,
   setEditingResource,
   setResourceForm
-}: { 
-  currentUser: UserData | null, 
-  handleLogout: () => void, 
-  showResourceForm: boolean, 
-  setShowResourceForm: (show: boolean) => void, 
-  showNoticeForm: boolean, 
-  setShowNoticeForm: (show: boolean) => void, 
-  users: UserData[], 
-  resources: Resource[], 
-  notices: Notice[], 
-  handleDeleteUser: (id: string) => void, 
-  handleDeleteResource: (id: string) => void, 
-  handleDeleteNotice: (id: string) => void, 
-  studentView: 'main' | 'school' | 'self', 
-  setStudentView: (view: 'main' | 'school' | 'self') => void, 
-  activeTab: any, 
-  setActiveTab: (tab: any) => void, 
-  selectedSubjectFilter: string | null, 
-  setSelectedSubjectFilter: (sub: string | null) => void, 
-  selfStudyTab: 'progress' | 'test' | 'ai', 
-  setSelfStudyTab: (tab: 'progress' | 'test' | 'ai') => void, 
-  aiPlan: string | null, 
-  setAiPlan: (plan: string | null) => void, 
-  aiPlanDetails: any, 
-  setAiPlanDetails: (details: any) => void, 
-  isAiLoading: boolean, 
-  handleAiAsk: (mode: 'chat' | 'plan' | 'test' | 'evaluate', prompt?: string) => void, 
-  currentTest: any, 
-  setCurrentTest: (test: any) => void, 
-  testAnswers: Record<number, string>, 
-  setTestAnswers: (answers: Record<number, string>) => void, 
-  testResult: any, 
-  setTestResult: (result: any) => void, 
-  chatMessages: any[], 
-  aiInput: string, 
-  setAiInput: (input: string) => void, 
-  chatEndRef: React.RefObject<HTMLDivElement>, 
-  onSelectResource: (res: Resource) => void,
-  adminUserTab: 'students' | 'teachers',
-  setAdminUserTab: (tab: 'students' | 'teachers') => void,
-  setSelectedResource: (res: Resource | null) => void,
-  setEditingResource: (res: Resource | null) => void,
-  setResourceForm: (form: any) => void
-}) => (
+}: DashboardViewProps) => (
   <div className="min-h-screen flex flex-col font-space relative overflow-hidden">
     <CyberBackground />
     <nav className="glass-panel border-b border-white/10 px-4 py-3 sm:px-6 sm:py-4 flex justify-between items-center sticky top-0 z-30">
@@ -2964,6 +3033,8 @@ const StudentDashboard = ({
     <main className="max-w-7xl mx-auto p-4 sm:p-6 flex-1">
       {currentUser?.role === 'main-admin' && (
         <MainAdminDashboard 
+          currentUser={currentUser}
+          setCurrentUser={setCurrentUser}
           users={users}
           resources={resources}
           notices={notices}
@@ -2977,11 +3048,14 @@ const StudentDashboard = ({
           adminUserTab={adminUserTab}
           setAdminUserTab={setAdminUserTab}
           setSelectedResource={setSelectedResource}
+          setEditingResource={setEditingResource}
+          setResourceForm={setResourceForm}
         />
       )}
       {currentUser?.role === 'teacher' && (
         <TeacherDashboard 
           currentUser={currentUser}
+          setCurrentUser={setCurrentUser}
           resources={resources}
           notices={notices}
           handleDeleteResource={handleDeleteResource}
@@ -3024,7 +3098,8 @@ const StudentDashboard = ({
           aiInput={aiInput}
           setAiInput={setAiInput}
           chatEndRef={chatEndRef}
-          onSelectResource={onSelectResource}
+          setSelectedResource={setSelectedResource}
+          setCurrentUser={setCurrentUser}
         />
       )}
     </main>
@@ -3036,18 +3111,29 @@ const StudentDashboard = ({
       <AnimatePresence mode="wait">
         {view === 'login' && (
           <motion.div key="login" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <LoginView />
+            <LoginView 
+              handleLogin={handleLogin}
+              isUploading={isUploading}
+              setView={setView}
+              setSignupType={setSignupType}
+            />
           </motion.div>
         )}
         {view === 'signup' && (
           <motion.div key="signup" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <SignupView />
+            <SignupView 
+              handleSignup={handleSignup}
+              setView={setView}
+              signupType={signupType}
+              isUploading={isUploading}
+            />
           </motion.div>
         )}
         {view === 'dashboard' && (
           <motion.div key="dashboard" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <DashboardView 
               currentUser={currentUser}
+              setCurrentUser={setCurrentUser}
               handleLogout={handleLogout}
               showResourceForm={showResourceForm}
               setShowResourceForm={setShowResourceForm}
@@ -3113,24 +3199,26 @@ const StudentDashboard = ({
         {showResourceForm && (
           <ResourceForm 
             onClose={() => { setShowResourceForm(false); setEditingResource(null); }} 
-            formData={resourceForm}
-            setFormData={setResourceForm}
-            onSubmit={handleAddResource}
+            resourceForm={resourceForm}
+            setResourceForm={setResourceForm}
+            handleAddResource={handleAddResource}
             isUploading={isUploading}
             selectedFile={selectedFile}
             setSelectedFile={setSelectedFile}
             editingResource={editingResource}
+            currentUser={currentUser}
           />
         )}
         {showNoticeForm && (
           <NoticeForm 
             onClose={() => setShowNoticeForm(false)} 
-            formData={noticeForm}
-            setFormData={setNoticeForm}
-            onSubmit={handleAddNotice}
+            noticeForm={noticeForm}
+            setNoticeForm={setNoticeForm}
+            handleAddNotice={handleAddNotice}
             isUploading={isUploading}
             selectedFile={selectedFile}
             setSelectedFile={setSelectedFile}
+            currentUser={currentUser}
           />
         )}
       </AnimatePresence>
@@ -3171,7 +3259,7 @@ const StudentDashboard = ({
               <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar bg-slate-950/30">
                 {chatMessages.length === 0 && (
                   <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-40">
-                    <Bot className="w-16 h-16" />
+                    <Cpu className="w-16 h-16" />
                     <p className="font-orbitron font-bold text-sm uppercase tracking-widest">How can I help you today?</p>
                   </div>
                 )}
