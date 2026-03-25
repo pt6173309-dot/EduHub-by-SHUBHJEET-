@@ -25,7 +25,8 @@ import {
   TrendingUp,
   Zap,
   Play,
-  CheckCircle2
+  CheckCircle2,
+  Cpu
 } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import ReactMarkdown from 'react-markdown';
@@ -109,6 +110,20 @@ interface Notice {
 interface ChatMessage {
   role: 'user' | 'model';
   text: string;
+}
+
+interface LoginViewProps {
+  handleLogin: (id: string, pass: string, role: UserRole) => Promise<void>;
+  isUploading: boolean;
+  setView: (view: 'login' | 'signup' | 'dashboard') => void;
+  setSignupType: (role: UserRole) => void;
+}
+
+interface SignupViewProps {
+  handleSignup: (data: any) => Promise<void>;
+  setView: (view: 'login' | 'signup' | 'dashboard') => void;
+  signupType: UserRole;
+  isUploading: boolean;
 }
 
 interface TeacherDashboardProps {
@@ -316,297 +331,6 @@ const ALL_SUBJECTS = [
   'Physical Education', 'Sanskrit', 'General Knowledge', 'Moral Science', 
   'Art', 'Music', 'Computer'
 ];
-
-// --- Components ---
-const CyberBackground = () => {
-  return (
-    <div className="cyber-bg">
-      <div className="cyber-grid" />
-      <div className="cyber-scanline" />
-      <div className="cyber-orb" style={{ top: '10%', left: '10%', background: 'radial-gradient(circle, rgba(0, 243, 255, 0.1) 0%, transparent 70%)' }} />
-      <div className="cyber-orb" style={{ bottom: '10%', right: '10%', background: 'radial-gradient(circle, rgba(157, 0, 255, 0.1) 0%, transparent 70%)', animationDelay: '-5s' }} />
-    </div>
-  );
-};
-
-interface LoginViewProps {
-  handleLogin: (id: string, pass: string, role: UserRole) => void;
-  isUploading: boolean;
-  setView: (view: 'login' | 'signup' | 'dashboard') => void;
-  setSignupType: (role: UserRole) => void;
-}
-
-const LoginView: React.FC<LoginViewProps> = ({ handleLogin, isUploading, setView, setSignupType }) => {
-  const [loginId, setLoginId] = useState('');
-  const [password, setPassword] = useState('');
-  const [loginRole, setLoginRole] = useState<UserRole>('student');
-
-  return (
-    <div className="min-h-screen flex items-center justify-center p-4 sm:p-6 font-space relative overflow-hidden">
-      <CyberBackground />
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="glass-panel p-6 sm:p-10 rounded-[2.5rem] max-w-md w-full border-cyber-blue/20 relative z-10"
-      >
-        <div className="text-center mb-8 sm:mb-12">
-          <div className="inline-block p-3 sm:p-4 bg-cyber-blue/10 rounded-2xl mb-4 sm:mb-6 border border-cyber-blue/20">
-            <Cpu className="w-8 h-8 sm:w-12 sm:h-12 text-cyber-blue animate-pulse" />
-          </div>
-          <h1 className="text-3xl sm:text-5xl font-orbitron font-black text-white tracking-tighter mb-2 neon-text">SHIKSHA</h1>
-          <p className="text-cyber-blue/60 font-rajdhani font-bold uppercase tracking-[0.3em] text-[10px] sm:text-xs">Neural Learning Interface</p>
-        </div>
-
-        <div className="flex bg-white/5 p-1.5 rounded-2xl mb-6 sm:mb-8 border border-white/10">
-          {(['student', 'teacher', 'main-admin'] as UserRole[]).map((role) => (
-            <button
-              key={role}
-              onClick={() => setLoginRole(role)}
-              className={`flex-1 py-2 sm:py-3 rounded-xl text-[10px] sm:text-xs font-orbitron font-black transition-all uppercase tracking-tighter ${loginRole === role ? 'bg-cyber-blue text-black shadow-[0_0_15px_rgba(0,243,255,0.4)]' : 'text-white/40 hover:text-white'}`}
-            >
-              {role.replace('-', ' ')}
-            </button>
-          ))}
-        </div>
-
-        <div className="space-y-4 sm:space-y-6">
-          <div className="group">
-            <label className="block text-[10px] sm:text-xs font-orbitron font-bold text-cyber-blue/60 mb-2 uppercase tracking-widest ml-1">Access ID</label>
-            <div className="relative">
-              <User className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-cyber-blue/40 w-4 h-4 sm:w-5 sm:h-5 group-focus-within:text-cyber-blue transition-colors" />
-              <input 
-                type="text" 
-                value={loginId}
-                onChange={(e) => setLoginId(e.target.value)}
-                className="w-full pl-10 sm:pl-12 pr-4 py-3 sm:py-4 bg-white/5 border border-white/10 rounded-xl focus:border-cyber-blue/50 focus:ring-1 focus:ring-cyber-blue/20 outline-none transition-all font-rajdhani text-base sm:text-lg tracking-wider text-white"
-                placeholder={loginRole === 'student' ? 'STU123' : loginRole === 'teacher' ? 'TCH123' : 'ADMIN_ID'}
-              />
-            </div>
-          </div>
-
-          <div className="group">
-            <label className="block text-[10px] sm:text-xs font-orbitron font-bold text-cyber-blue/60 mb-2 uppercase tracking-widest ml-1">Security Key</label>
-            <div className="relative">
-              <Lock className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-cyber-blue/40 w-4 h-4 sm:w-5 sm:h-5 group-focus-within:text-cyber-blue transition-colors" />
-              <input 
-                type="password" 
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 sm:pl-12 pr-4 py-3 sm:py-4 bg-white/5 border border-white/10 rounded-xl focus:border-cyber-blue/50 focus:ring-1 focus:ring-cyber-blue/20 outline-none transition-all font-rajdhani text-base sm:text-lg tracking-wider text-white"
-                placeholder="••••••••"
-              />
-            </div>
-          </div>
-
-          <button 
-            onClick={() => handleLogin(loginId, password, loginRole)}
-            disabled={isUploading}
-            className="w-full cyber-button bg-cyber-blue hover:bg-white text-black font-orbitron font-black py-3.5 sm:py-5 rounded-xl shadow-[0_0_20px_rgba(0,243,255,0.3)] transition-all mt-2 sm:mt-4 flex items-center justify-center gap-2 disabled:opacity-50 uppercase tracking-tighter text-xs sm:text-base"
-          >
-            {isUploading ? (
-              <>
-                <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
-                Initializing...
-              </>
-            ) : (
-              'Access System'
-            )}
-          </button>
-
-          {loginRole !== 'main-admin' && (
-            <p className="text-center text-[10px] sm:text-xs font-rajdhani font-bold text-white/40 mt-6 sm:mt-8 uppercase tracking-widest">
-              New User?{' '}
-              <button 
-                onClick={() => { setSignupType(loginRole); setView('signup'); }} 
-                className="text-cyber-blue hover:text-white transition-colors underline underline-offset-4"
-              >
-                Register Identity
-              </button>
-            </p>
-          )}
-        </div>
-      </motion.div>
-    </div>
-  );
-};
-
-interface SignupViewProps {
-  handleSignup: (data: any) => void;
-  setView: (view: 'login' | 'signup' | 'dashboard') => void;
-  signupType: UserRole;
-  isUploading: boolean;
-}
-
-const SignupView: React.FC<SignupViewProps> = ({ handleSignup, setView, signupType, isUploading }) => {
-  const [formData, setFormData] = useState({
-    name: '',
-    studentId: '',
-    teacherId: '',
-    class: 'Class 6',
-    classes: [] as string[],
-    subjects: [] as string[],
-    mobile: '',
-    password: '',
-    role: signupType
-  });
-
-  const toggleMultiSelect = (field: 'classes' | 'subjects', value: string) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: prev[field].includes(value) 
-        ? prev[field].filter(v => v !== value)
-        : [...prev[field], value]
-    }));
-  };
-
-  return (
-    <div className="min-h-screen flex items-center justify-center p-6 font-space relative overflow-hidden">
-      <CyberBackground />
-      <motion.div 
-        initial={{ opacity: 0, x: 20 }}
-        animate={{ opacity: 1, x: 0 }}
-        className="glass-panel p-5 sm:p-8 rounded-3xl max-w-2xl w-full border-cyber-purple/20 relative z-10"
-      >
-        <div className="flex justify-between items-center mb-5 sm:mb-8">
-          <button onClick={() => setView('login')} className="p-1.5 sm:p-2 hover:bg-white/10 rounded-full transition-all text-white/60">
-            <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
-          </button>
-          <div className="text-right">
-            <h2 className="text-lg sm:text-3xl font-orbitron font-black text-white tracking-tighter neon-text">REGISTRATION</h2>
-            <p className="text-cyber-purple/70 font-rajdhani font-bold uppercase tracking-widest text-[8px] sm:text-[10px]">New {signupType} Profile</p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8">
-          <div className="space-y-3 sm:space-y-4">
-            <div>
-              <label className="block text-[8px] sm:text-[10px] font-orbitron font-bold text-cyber-purple/60 mb-1 sm:mb-2 uppercase tracking-widest">Full Name</label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-4 py-2.5 sm:py-3 bg-white/5 border border-white/10 rounded-xl focus:border-cyber-purple/50 outline-none text-white font-rajdhani text-sm sm:text-base"
-                placeholder="John Doe"
-              />
-            </div>
-
-            {formData.role === 'student' ? (
-              <>
-                <div>
-                  <label className="block text-[8px] sm:text-[10px] font-orbitron font-bold text-cyber-purple/60 mb-1 sm:mb-2 uppercase tracking-widest">Student ID</label>
-                  <input
-                    type="text"
-                    value={formData.studentId}
-                    onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
-                    className="w-full px-4 py-2.5 sm:py-3 bg-white/5 border border-white/10 rounded-xl focus:border-cyber-purple/50 outline-none text-white font-rajdhani text-sm sm:text-base"
-                    placeholder="STU123"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[8px] sm:text-[10px] font-orbitron font-bold text-cyber-purple/60 mb-1 sm:mb-2 uppercase tracking-widest">Class</label>
-                  <select
-                    value={formData.class}
-                    onChange={(e) => setFormData({ ...formData, class: e.target.value })}
-                    className="w-full px-4 py-2.5 sm:py-3 bg-white/5 border border-white/10 rounded-xl focus:border-cyber-purple/50 outline-none text-white font-rajdhani appearance-none text-sm sm:text-base"
-                  >
-                    {ALL_CLASSES.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
-                  </select>
-                </div>
-              </>
-            ) : (
-              <>
-                <div>
-                  <label className="block text-[8px] sm:text-[10px] font-orbitron font-bold text-cyber-purple/60 mb-1 sm:mb-2 uppercase tracking-widest">Teacher ID</label>
-                  <input
-                    type="text"
-                    value={formData.teacherId}
-                    onChange={(e) => setFormData({ ...formData, teacherId: e.target.value })}
-                    className="w-full px-4 py-2.5 sm:py-3 bg-white/5 border border-white/10 rounded-xl focus:border-cyber-purple/50 outline-none text-white font-rajdhani text-sm sm:text-base"
-                    placeholder="TCH123"
-                  />
-                </div>
-              </>
-            )}
-
-            <div>
-              <label className="block text-[8px] sm:text-[10px] font-orbitron font-bold text-cyber-purple/60 mb-1 sm:mb-2 uppercase tracking-widest">Mobile Number</label>
-              <input
-                type="tel"
-                value={formData.mobile}
-                onChange={(e) => setFormData({ ...formData, mobile: e.target.value })}
-                className="w-full px-4 py-2.5 sm:py-3 bg-white/5 border border-white/10 rounded-xl focus:border-cyber-purple/50 outline-none text-white font-rajdhani text-sm sm:text-base"
-                placeholder="+91 XXXXX XXXXX"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[8px] sm:text-[10px] font-orbitron font-bold text-cyber-purple/60 mb-1 sm:mb-2 uppercase tracking-widest">Security Password</label>
-              <input
-                type="password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                className="w-full px-4 py-2.5 sm:py-3 bg-white/5 border border-white/10 rounded-xl focus:border-cyber-purple/50 outline-none text-white font-rajdhani text-sm sm:text-base"
-                placeholder="••••••••"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-3 sm:space-y-4">
-            {formData.role === 'teacher' && (
-              <>
-                <div>
-                  <label className="block text-[8px] sm:text-[10px] font-orbitron font-bold text-cyber-purple/60 mb-1 sm:mb-2 uppercase tracking-widest">Assign Classes</label>
-                  <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto p-2 bg-white/5 rounded-xl border border-white/10 custom-scrollbar">
-                    {ALL_CLASSES.map(c => (
-                      <button
-                        key={c}
-                        onClick={() => toggleMultiSelect('classes', c)}
-                        className={`px-3 py-1.5 rounded-lg text-[10px] font-rajdhani transition-all border ${formData.classes.includes(c) ? 'bg-cyber-purple/20 border-cyber-purple text-white' : 'border-white/10 text-white/40'}`}
-                      >
-                        {c}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-[8px] sm:text-[10px] font-orbitron font-bold text-cyber-purple/60 mb-1 sm:mb-2 uppercase tracking-widest">Assign Subjects</label>
-                  <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto p-2 bg-white/5 rounded-xl border border-white/10 custom-scrollbar">
-                    {ALL_SUBJECTS.map(s => (
-                      <button
-                        key={s}
-                        onClick={() => toggleMultiSelect('subjects', s)}
-                        className={`px-3 py-1.5 rounded-lg text-[10px] font-rajdhani transition-all border ${formData.subjects.includes(s) ? 'bg-cyber-purple/20 border-cyber-purple text-white' : 'border-white/10 text-white/40'}`}
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        <button 
-          onClick={() => handleSignup(formData)}
-          disabled={isUploading}
-          className="w-full cyber-button bg-cyber-purple hover:bg-white text-black font-orbitron font-black py-3.5 sm:py-5 rounded-xl shadow-[0_0_20px_rgba(157,0,255,0.3)] transition-all mt-6 sm:mt-10 flex items-center justify-center gap-2 disabled:opacity-50 uppercase tracking-tighter text-xs sm:text-base"
-        >
-          {isUploading ? (
-            <>
-              <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
-              Processing...
-            </>
-          ) : (
-            'Initialize Profile'
-          )}
-        </button>
-      </motion.div>
-    </div>
-  );
-};
-
 
 // --- Helper Components ---
 interface ResourceCardProps {
@@ -2182,7 +1906,7 @@ const CyberBackground = () => {
   );
 };
 
-const LoginView = () => {
+const LoginView: React.FC<LoginViewProps> = ({ handleLogin, isUploading, setView, setSignupType }) => {
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [loginRole, setLoginRole] = useState<UserRole>('student');
@@ -2286,7 +2010,7 @@ const LoginView = () => {
   );
 };
 
-  const SignupView = () => {
+const SignupView: React.FC<SignupViewProps> = ({ handleSignup, setView, signupType, isUploading }) => {
     const [formData, setFormData] = useState({
       name: '',
       studentId: '',
