@@ -1693,9 +1693,9 @@ const AppContent: React.FC = () => {
     setIsAiLoading(true);
 
     try {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        throw new Error('API_KEY_MISSING: Gemini API Key is not configured. Please add GEMINI_API_KEY to your environment variables.');
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '') || (window as any).GEMINI_API_KEY;
+      if (!apiKey || apiKey === "") {
+        throw new Error('API_KEY_MISSING: Gemini API Key is not configured. Please add VITE_GEMINI_API_KEY to your environment variables in Netlify settings and redeploy.');
       }
       const ai = new GoogleGenAI({ apiKey });
       const studentClass = currentUser?.role === 'student' ? currentUser.class : 'General';
