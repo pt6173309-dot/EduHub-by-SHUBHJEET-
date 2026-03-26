@@ -1693,8 +1693,15 @@ const AppContent: React.FC = () => {
     setIsAiLoading(true);
 
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '') || (window as any).GEMINI_API_KEY;
-      if (!apiKey || apiKey === "") {
+      // Robust API key retrieval for various environments (local, Netlify, etc.)
+      const apiKey = 
+        import.meta.env.VITE_GEMINI_API_KEY || 
+        (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '') || 
+        (typeof process !== 'undefined' ? process.env.VITE_GEMINI_API_KEY : '') ||
+        (window as any).GEMINI_API_KEY ||
+        (window as any).VITE_GEMINI_API_KEY;
+
+      if (!apiKey || apiKey === "" || apiKey === "undefined") {
         throw new Error('API_KEY_MISSING: Gemini API Key is not configured. Please add VITE_GEMINI_API_KEY to your environment variables in Netlify settings and redeploy.');
       }
       const ai = new GoogleGenAI({ apiKey });
@@ -1761,14 +1768,19 @@ const AppContent: React.FC = () => {
     } catch (error: any) {
       console.error('AI Error:', error);
       let errorText = "Error connecting to AI.";
-      if (error.message?.includes('API_KEY_MISSING')) {
-        errorText = error.message;
-      } else if (error.message?.includes('quota')) {
+      const errorMessage = error.message || "";
+      
+      if (errorMessage.includes('API_KEY_MISSING')) {
+        errorText = errorMessage;
+      } else if (errorMessage.toLowerCase().includes('quota')) {
         errorText = "AI Quota exceeded for today. Please try again tomorrow.";
-      } else if (error.message?.includes('API key')) {
-        errorText = "AI System is initializing. Please wait a moment and try again.";
-      } else if (error.message) {
-        errorText = `AI Error: ${error.message}`;
+      } else if (errorMessage.toLowerCase().includes('api key not valid') || errorMessage.toLowerCase().includes('invalid api key')) {
+        errorText = "Invalid Gemini API Key. Please check your key in Netlify settings and redeploy.";
+      } else if (errorMessage.includes('API key') && !errorMessage.includes('MISSING')) {
+        // If it's a generic API key error from the SDK
+        errorText = `AI Configuration Error: ${errorMessage}`;
+      } else if (errorMessage) {
+        errorText = `AI Error: ${errorMessage}`;
       }
       
       if (mode === 'chat') {
