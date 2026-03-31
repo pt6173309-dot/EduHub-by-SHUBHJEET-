@@ -43,6 +43,7 @@ import {
 } from 'firebase/firestore';
 import { getAuth, signInAnonymously } from 'firebase/auth';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import firebaseConfig from './firebase-applet-config.json';
 
 // --- Firebase Initialization ---
@@ -101,6 +102,11 @@ interface Notice {
   createdAt?: any;
 }
 
+interface ChatMessage {
+  role: 'user' | 'model';
+  text: string;
+}
+
 interface LoginViewProps {
   handleLogin: (id: string, pass: string, role: UserRole) => Promise<void>;
   isUploading: boolean;
@@ -127,8 +133,8 @@ interface TeacherDashboardProps {
   setSelectedResource: (res: Resource | null) => void;
   setEditingResource: (res: Resource | null) => void;
   setResourceForm: (form: any) => void;
-  activeTab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users';
-  setActiveTab: (tab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users') => void;
+  activeTab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users' | 'ai-plan' | 'ai-test';
+  setActiveTab: (tab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users' | 'ai-plan' | 'ai-test') => void;
 }
 
 interface StudentDashboardProps {
@@ -136,13 +142,23 @@ interface StudentDashboardProps {
   setCurrentUser: (user: UserData | null) => void;
   resources: Resource[];
   notices: Notice[];
-  studentView: 'main' | 'school';
-  setStudentView: (view: 'main' | 'school') => void;
-  activeTab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users';
-  setActiveTab: (tab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users') => void;
+  studentView: 'main' | 'school' | 'self-study';
+  setStudentView: (view: 'main' | 'school' | 'self-study') => void;
+  activeTab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users' | 'ai-plan' | 'ai-test';
+  setActiveTab: (tab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users' | 'ai-plan' | 'ai-test') => void;
   selectedSubjectFilter: string | null;
   setSelectedSubjectFilter: (sub: string | null) => void;
   setSelectedResource: (res: Resource | null) => void;
+  handleAiAsk: (type: 'chat' | 'plan' | 'test' | 'evaluate', input: string) => Promise<void>;
+  isAiLoading: boolean;
+  aiPlan: string | null;
+  setAiPlan: (plan: string | null) => void;
+  currentTest: any | null;
+  setCurrentTest: (test: any | null) => void;
+  testAnswers: Record<string, string>;
+  setTestAnswers: (answers: Record<string, string>) => void;
+  testResult: any | null;
+  setTestResult: (result: any | null) => void;
 }
 
 interface MainAdminDashboardProps {
@@ -156,8 +172,8 @@ interface MainAdminDashboardProps {
   handleDeleteNotice: (id: string) => void;
   setShowResourceForm: (show: boolean) => void;
   setShowNoticeForm: (show: boolean) => void;
-  activeTab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users';
-  setActiveTab: (tab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users') => void;
+  activeTab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users' | 'ai-plan' | 'ai-test';
+  setActiveTab: (tab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users' | 'ai-plan' | 'ai-test') => void;
   adminUserTab: 'students' | 'teachers';
   setAdminUserTab: (tab: 'students' | 'teachers') => void;
   setSelectedResource: (res: Resource | null) => void;
@@ -179,10 +195,10 @@ interface DashboardViewProps {
   handleDeleteUser: (id: string) => void;
   handleDeleteResource: (id: string) => void;
   handleDeleteNotice: (id: string) => void;
-  studentView: 'main' | 'school';
-  setStudentView: (view: 'main' | 'school') => void;
-  activeTab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users';
-  setActiveTab: (tab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users') => void;
+  studentView: 'main' | 'school' | 'self-study';
+  setStudentView: (view: 'main' | 'school' | 'self-study') => void;
+  activeTab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users' | 'ai-plan' | 'ai-test';
+  setActiveTab: (tab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users' | 'ai-plan' | 'ai-test') => void;
   selectedSubjectFilter: string | null;
   setSelectedSubjectFilter: (sub: string | null) => void;
   onSelectResource: (res: Resource) => void;
@@ -191,6 +207,17 @@ interface DashboardViewProps {
   setSelectedResource: (res: Resource | null) => void;
   setEditingResource: (res: Resource | null) => void;
   setResourceForm: (form: any) => void;
+  setShowAiHelper: (show: boolean) => void;
+  handleAiAsk: (type: 'chat' | 'plan' | 'test' | 'evaluate', input: string) => Promise<void>;
+  isAiLoading: boolean;
+  aiPlan: string | null;
+  setAiPlan: (plan: string | null) => void;
+  currentTest: any | null;
+  setCurrentTest: (test: any | null) => void;
+  testAnswers: Record<string, string>;
+  setTestAnswers: (answers: Record<string, string>) => void;
+  testResult: any | null;
+  setTestResult: (result: any | null) => void;
 }
 
 enum OperationType {
@@ -1220,9 +1247,9 @@ const AppContent: React.FC = () => {
   const [selectedNotice, setSelectedNotice] = useState<Notice | null>(null);
 
   // Dashboard Navigation State
-  const [activeTab, setActiveTab] = useState<'video' | 'note' | 'question' | 'notice' | 'profile' | 'users'>('video');
+  const [activeTab, setActiveTab] = useState<'video' | 'note' | 'question' | 'notice' | 'profile' | 'users' | 'ai-plan' | 'ai-test'>('video');
   const [adminUserTab, setAdminUserTab] = useState<'students' | 'teachers'>('students');
-  const [studentView, setStudentView] = useState<'main' | 'school'>('main');
+  const [studentView, setStudentView] = useState<'main' | 'school' | 'self-study'>('main');
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string | null>(null);
   const [selectedClassFilter, setSelectedClassFilter] = useState<string | null>(null);
 
@@ -1248,6 +1275,17 @@ const AppContent: React.FC = () => {
   const [editingProfile, setEditingProfile] = useState(false);
   const [showResourceForm, setShowResourceForm] = useState(false);
   const [showNoticeForm, setShowNoticeForm] = useState(false);
+  const [showAiHelper, setShowAiHelper] = useState(false);
+
+  // AI State
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [aiInput, setAiInput] = useState('');
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiPlan, setAiPlan] = useState<string | null>(null);
+  const [currentTest, setCurrentTest] = useState<any | null>(null);
+  const [testAnswers, setTestAnswers] = useState<Record<string, string>>({});
+  const [testResult, setTestResult] = useState<any | null>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Validate Connection to Firestore
   useEffect(() => {
@@ -1340,6 +1378,11 @@ const AppContent: React.FC = () => {
     };
     promoteStudents();
   }, [currentUser]);
+
+  // Scroll to bottom of chat
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
 
   // --- Auth Handlers ---
   const handleSignup = async (data: any) => {
@@ -1608,14 +1651,78 @@ const AppContent: React.FC = () => {
     if (window.confirm('Are you sure you want to delete this resource?')) {
       try {
         await deleteDoc(doc(db, 'resources', id));
-        alert('Resource deleted');
-      } catch (error) {
+        alert('Resource deleted successfully!');
+      } catch (error: any) {
         console.error('Delete error:', error);
+        alert(`Failed to delete resource: ${error.message}`);
       }
     }
   };
 
-// --- Components ---
+  const handleAiAsk = async (type: 'chat' | 'plan' | 'test' | 'evaluate', input: string) => {
+    if (!input.trim() && type === 'chat') return;
+    
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      alert("AI Service is currently unavailable. (API_KEY_MISSING)");
+      return;
+    }
+
+    setIsAiLoading(true);
+    try {
+      const genAI = new GoogleGenAI({ apiKey });
+      const model = genAI.models.generateContent({
+        model: "gemini-3-flash-preview",
+        config: {
+          systemInstruction: `You are Shiksha AI, an expert NCERT educational assistant. 
+          Your goal is to help students excel in their studies.
+          - For 'chat': Answer academic questions clearly using NCERT context.
+          - For 'plan': Generate a structured 7-day study plan based on the topic/subject.
+          - For 'test': Create a 5-question MCQ test. Return ONLY a JSON object: {"title": "...", "questions": [{"id": 1, "question": "...", "options": ["A", "B", "C", "D"], "correct": "A"}]}.
+          - For 'evaluate': Compare student answers with correct ones and provide a score and feedback. Return ONLY a JSON object: {"score": "X/5", "feedback": "..."}.
+          Keep responses encouraging and professional.`,
+        },
+        contents: type === 'chat' 
+          ? [...chatMessages.map(m => ({ role: m.role, parts: [{ text: m.text }] })), { role: 'user', parts: [{ text: input }] }]
+          : [{ role: 'user', parts: [{ text: input }] }]
+      });
+
+      const response = await model;
+      const text = response.text || '';
+
+      if (type === 'chat') {
+        setChatMessages(prev => [...prev, { role: 'user', text: input }, { role: 'model', text }]);
+        setAiInput('');
+      } else if (type === 'plan') {
+        setAiPlan(text);
+      } else if (type === 'test') {
+        try {
+          const cleanedJson = text.replace(/```json|```/g, '').trim();
+          setCurrentTest(JSON.parse(cleanedJson));
+          setTestAnswers({});
+          setTestResult(null);
+        } catch (e) {
+          console.error("Failed to parse test JSON:", e);
+          alert("Failed to generate test. Please try again.");
+        }
+      } else if (type === 'evaluate') {
+        try {
+          const cleanedJson = text.replace(/```json|```/g, '').trim();
+          setTestResult(JSON.parse(cleanedJson));
+        } catch (e) {
+          console.error("Failed to parse evaluation JSON:", e);
+          alert("Failed to evaluate test. Please try again.");
+        }
+      }
+    } catch (error) {
+      console.error("AI Error:", error);
+      alert("Something went wrong with Shiksha AI. Please try again.");
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  // --- Auth Handlers ---
 
 const CyberBackground = () => {
   useEffect(() => {
@@ -2019,10 +2126,233 @@ const SignupView: React.FC<SignupViewProps> = ({ handleSignup, setView, signupTy
 
 
 
+const AiHelperModal = ({ 
+  onClose, chatMessages, aiInput, setAiInput, handleAiAsk, isAiLoading, chatEndRef 
+}: { 
+  onClose: () => void, 
+  chatMessages: ChatMessage[], 
+  aiInput: string, 
+  setAiInput: (v: string) => void, 
+  handleAiAsk: (type: 'chat', input: string) => Promise<void>,
+  isAiLoading: boolean,
+  chatEndRef: React.RefObject<HTMLDivElement | null>
+}) => (
+  <motion.div 
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    exit={{ opacity: 0 }}
+    className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+  >
+    <motion.div 
+      initial={{ scale: 0.9, y: 20 }}
+      animate={{ scale: 1, y: 0 }}
+      className="glass-panel w-full max-w-2xl h-[80vh] flex flex-col rounded-[32px] border border-cyber-blue/30 overflow-hidden shadow-[0_0_50px_rgba(0,243,255,0.15)]"
+    >
+      <div className="p-6 border-b border-white/10 flex items-center justify-between bg-cyber-blue/5">
+        <div className="flex items-center gap-3">
+          <div className="bg-cyber-blue/20 p-2 rounded-xl">
+            <MessageSquare className="text-cyber-blue w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="font-orbitron font-black text-white text-xl uppercase tracking-tighter">Siksha AI</h3>
+            <p className="text-[10px] font-rajdhani font-bold text-cyber-blue/60 uppercase tracking-widest">NCERT Helper Assistant</p>
+          </div>
+        </div>
+        <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-all">
+          <X className="text-white/40 w-6 h-6" />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-6 space-y-4 no-scrollbar">
+        {chatMessages.length === 0 && (
+          <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-40">
+            <GraduationCap className="w-16 h-16 text-cyber-blue" />
+            <p className="font-orbitron font-bold text-sm uppercase tracking-widest">How can I help your studies today?</p>
+          </div>
+        )}
+        {chatMessages.map((msg, i) => (
+          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[85%] p-4 rounded-2xl font-rajdhani text-sm sm:text-base ${
+              msg.role === 'user' 
+                ? 'bg-cyber-blue text-black font-bold rounded-tr-none' 
+                : 'bg-white/5 text-white border border-white/10 rounded-tl-none'
+            }`}>
+              <ReactMarkdown>{msg.text}</ReactMarkdown>
+            </div>
+          </div>
+        ))}
+        {isAiLoading && (
+          <div className="flex justify-start">
+            <div className="bg-white/5 p-4 rounded-2xl rounded-tl-none border border-white/10">
+              <Loader2 className="w-5 h-5 text-cyber-blue animate-spin" />
+            </div>
+          </div>
+        )}
+        <div ref={chatEndRef} />
+      </div>
+
+      <div className="p-6 border-t border-white/10 bg-black/40">
+        <div className="relative">
+          <input 
+            value={aiInput}
+            onChange={(e) => setAiInput(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && handleAiAsk('chat', aiInput)}
+            placeholder="Ask anything about your NCERT subjects..."
+            className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 pr-16 text-white font-rajdhani focus:outline-none focus:border-cyber-blue transition-all"
+          />
+          <button 
+            onClick={() => handleAiAsk('chat', aiInput)}
+            disabled={isAiLoading || !aiInput.trim()}
+            className="absolute right-2 top-1/2 -translate-y-1/2 p-3 bg-cyber-blue text-black rounded-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+          >
+            <Send className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  </motion.div>
+);
+
+const StudyPlanView = ({ aiPlan, handleAiAsk, isAiLoading }: { aiPlan: string | null, handleAiAsk: (t: 'plan', i: string) => Promise<void>, isAiLoading: boolean }) => {
+  const [topic, setTopic] = useState('');
+  return (
+    <div className="space-y-6">
+      <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-white/10">
+        <h3 className="font-orbitron font-black text-white text-lg sm:text-xl uppercase tracking-tighter mb-4">AI Study Planner</h3>
+        <div className="flex flex-col sm:flex-row gap-4">
+          <input 
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            placeholder="Enter topic or subject (e.g., Class 10 Physics Electricity)"
+            className="flex-1 bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white font-rajdhani focus:outline-none focus:border-cyber-blue"
+          />
+          <button 
+            onClick={() => handleAiAsk('plan', topic)}
+            disabled={isAiLoading || !topic.trim()}
+            className="cyber-button bg-cyber-blue text-black font-orbitron font-bold py-3 px-8 rounded-xl disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {isAiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />}
+            Generate Plan
+          </button>
+        </div>
+      </div>
+
+      {aiPlan && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-panel p-6 sm:p-8 rounded-3xl border border-cyber-blue/20"
+        >
+          <div className="prose prose-invert max-w-none font-rajdhani text-lg leading-relaxed">
+            <ReactMarkdown>{aiPlan}</ReactMarkdown>
+          </div>
+        </motion.div>
+      )}
+    </div>
+  );
+};
+
+const TestGeneratorView = ({ 
+  currentTest, handleAiAsk, isAiLoading, testAnswers, setTestAnswers, testResult, setTestResult 
+}: { 
+  currentTest: any, handleAiAsk: any, isAiLoading: boolean, testAnswers: any, setTestAnswers: any, testResult: any, setTestResult: any 
+}) => {
+  const [topic, setTopic] = useState('');
+  
+  const handleSubmitTest = () => {
+    const input = `Evaluate these answers for the test "${currentTest.title}": ${JSON.stringify(testAnswers)}. Correct answers were: ${JSON.stringify(currentTest.questions.map((q: any) => ({id: q.id, correct: q.correct})))}`;
+    handleAiAsk('evaluate', input);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-white/10">
+        <h3 className="font-orbitron font-black text-white text-lg sm:text-xl uppercase tracking-tighter mb-4">AI Test Generator</h3>
+        <div className="flex flex-col sm:flex-row gap-4">
+          <input 
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            placeholder="Topic for test (e.g., Periodic Table)"
+            className="flex-1 bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white font-rajdhani focus:outline-none focus:border-cyber-blue"
+          />
+          <button 
+            onClick={() => handleAiAsk('test', topic)}
+            disabled={isAiLoading || !topic.trim()}
+            className="cyber-button bg-amber-500 text-black font-orbitron font-bold py-3 px-8 rounded-xl disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {isAiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            Create Test
+          </button>
+        </div>
+      </div>
+
+      {currentTest && !testResult && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-panel p-6 sm:p-8 rounded-3xl border border-white/10 space-y-8"
+        >
+          <h4 className="font-orbitron font-black text-cyber-blue text-xl uppercase tracking-tighter">{currentTest.title}</h4>
+          <div className="space-y-8">
+            {currentTest.questions.map((q: any, idx: number) => (
+              <div key={q.id} className="space-y-4">
+                <p className="text-white font-rajdhani text-lg font-bold">{idx + 1}. {q.question}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {q.options.map((opt: string) => (
+                    <button
+                      key={opt}
+                      onClick={() => setTestAnswers({ ...testAnswers, [q.id]: opt })}
+                      className={`p-4 rounded-xl border font-rajdhani text-left transition-all ${
+                        testAnswers[q.id] === opt 
+                          ? 'bg-cyber-blue/20 border-cyber-blue text-cyber-blue' 
+                          : 'bg-white/5 border-white/10 text-white/60 hover:border-white/20'
+                      }`}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          <button 
+            onClick={handleSubmitTest}
+            disabled={isAiLoading || Object.keys(testAnswers).length < currentTest.questions.length}
+            className="w-full cyber-button bg-cyber-blue text-black font-orbitron font-black py-4 rounded-xl disabled:opacity-50 uppercase tracking-widest"
+          >
+            {isAiLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Submit Test for Evaluation'}
+          </button>
+        </motion.div>
+      )}
+
+      {testResult && (
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="glass-panel p-8 rounded-3xl border-2 border-cyber-blue text-center space-y-6"
+        >
+          <div className="inline-block p-6 rounded-full bg-cyber-blue/20 border border-cyber-blue mb-4">
+            <TrendingUp className="w-12 h-12 text-cyber-blue" />
+          </div>
+          <h4 className="font-orbitron font-black text-white text-3xl uppercase tracking-tighter">Test Result</h4>
+          <div className="text-6xl font-orbitron font-black text-cyber-blue neon-text">{testResult.score}</div>
+          <p className="text-white/80 font-rajdhani text-xl max-w-md mx-auto leading-relaxed">{testResult.feedback}</p>
+          <button 
+            onClick={() => { setCurrentTest(null); setTestResult(null); }}
+            className="px-8 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-orbitron font-bold transition-all uppercase tracking-widest text-sm"
+          >
+            Take Another Test
+          </button>
+        </motion.div>
+      )}
+    </div>
+  );
+};
+
 const StudentDashboard = ({ 
   currentUser, setCurrentUser, resources, notices, studentView, setStudentView, 
   activeTab, setActiveTab, selectedSubjectFilter, setSelectedSubjectFilter, 
-  setSelectedResource 
+  setSelectedResource, handleAiAsk, isAiLoading, aiPlan, setAiPlan, currentTest, setCurrentTest, testAnswers, setTestAnswers, testResult, setTestResult
 }: StudentDashboardProps) => {
     const student = currentUser as UserData;
     const studentSubjects = CLASS_SUBJECTS[student.class!] || [];
@@ -2034,12 +2364,12 @@ const StudentDashboard = ({
 
     if (studentView === 'main') {
       return (
-        <div className="flex justify-center max-w-4xl mx-auto py-10 sm:py-20">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-10 max-w-5xl mx-auto py-10 sm:py-20 px-4">
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setStudentView('school')}
-            className="glass-panel p-8 sm:p-12 rounded-[40px] border-2 border-cyber-blue/20 hover:border-cyber-blue transition-all flex flex-col items-center justify-center gap-6 group relative overflow-hidden h-[200px] sm:h-[300px] w-full max-w-md"
+            className="glass-panel p-8 sm:p-12 rounded-[40px] border-2 border-cyber-blue/20 hover:border-cyber-blue transition-all flex flex-col items-center justify-center gap-6 group relative overflow-hidden h-[200px] sm:h-[300px]"
           >
             <div className="absolute inset-0 bg-cyber-blue/5 group-hover:bg-cyber-blue/10 transition-all" />
             <div className="bg-cyber-blue/20 p-6 rounded-3xl border border-cyber-blue/40 shadow-[0_0_20px_rgba(0,243,255,0.2)] group-hover:shadow-[0_0_30px_rgba(0,243,255,0.4)] transition-all">
@@ -2047,6 +2377,68 @@ const StudentDashboard = ({
             </div>
             <h3 className="font-orbitron font-black text-white text-xl sm:text-3xl uppercase tracking-tighter neon-text">School Study</h3>
           </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => { setStudentView('self-study'); setActiveTab('ai-plan'); }}
+            className="glass-panel p-8 sm:p-12 rounded-[40px] border-2 border-cyber-purple/20 hover:border-cyber-purple transition-all flex flex-col items-center justify-center gap-6 group relative overflow-hidden h-[200px] sm:h-[300px]"
+          >
+            <div className="absolute inset-0 bg-cyber-purple/5 group-hover:bg-cyber-purple/10 transition-all" />
+            <div className="bg-cyber-purple/20 p-6 rounded-3xl border border-cyber-purple/40 shadow-[0_0_20px_rgba(157,0,255,0.2)] group-hover:shadow-[0_0_30px_rgba(157,0,255,0.4)] transition-all">
+              <TrendingUp className="w-12 h-12 sm:w-16 sm:h-16 text-cyber-purple" />
+            </div>
+            <h3 className="font-orbitron font-black text-white text-xl sm:text-3xl uppercase tracking-tighter neon-text">Self Study</h3>
+          </motion.button>
+        </div>
+      );
+    }
+
+    if (studentView === 'self-study') {
+      return (
+        <div className="space-y-6 sm:space-y-8">
+          <div className="flex items-center justify-between">
+            <button onClick={() => setStudentView('main')} className="flex items-center gap-2 text-white/40 hover:text-cyber-purple transition-all font-orbitron font-bold text-xs uppercase tracking-widest">
+              <ChevronLeft className="w-4 h-4" /> Back to Portal
+            </button>
+            <h3 className="font-orbitron font-black text-white text-lg sm:text-xl uppercase tracking-tighter">Self Study - Shiksha AI</h3>
+          </div>
+
+          <div className="flex gap-4 border-b border-white/10 pb-4">
+            {[
+              { id: 'ai-plan', label: 'Study Plan', icon: TrendingUp },
+              { id: 'ai-test', label: 'Test Generator', icon: HelpCircle },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-orbitron font-bold text-xs uppercase tracking-widest transition-all ${
+                  activeTab === tab.id 
+                    ? 'bg-cyber-purple text-white shadow-[0_0_15px_rgba(157,0,255,0.3)]' 
+                    : 'text-white/40 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <tab.icon className="w-4 h-4" />
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-8">
+            {activeTab === 'ai-plan' ? (
+              <StudyPlanView aiPlan={aiPlan} handleAiAsk={handleAiAsk} isAiLoading={isAiLoading} />
+            ) : (
+              <TestGeneratorView 
+                currentTest={currentTest} 
+                handleAiAsk={handleAiAsk} 
+                isAiLoading={isAiLoading}
+                testAnswers={testAnswers}
+                setTestAnswers={setTestAnswers}
+                testResult={testResult}
+                setTestResult={setTestResult}
+              />
+            )}
+          </div>
         </div>
       );
     }
@@ -2200,10 +2592,34 @@ const DashboardView = ({
   setAdminUserTab,
   setSelectedResource,
   setEditingResource,
-  setResourceForm
+  setResourceForm,
+  setShowAiHelper,
+  handleAiAsk,
+  isAiLoading,
+  aiPlan,
+  setAiPlan,
+  currentTest,
+  setCurrentTest,
+  testAnswers,
+  setTestAnswers,
+  testResult,
+  setTestResult
 }: DashboardViewProps) => (
   <div className="min-h-screen flex flex-col font-space relative overflow-hidden">
     <CyberBackground />
+    {currentUser?.role === 'student' && (
+      <motion.button
+        whileHover={{ scale: 1.1, rotate: 5 }}
+        whileTap={{ scale: 0.9 }}
+        onClick={() => setShowAiHelper(true)}
+        className="fixed bottom-6 right-6 z-50 bg-cyber-blue p-4 rounded-2xl shadow-[0_0_20px_rgba(0,243,255,0.4)] group"
+      >
+        <MessageSquare className="w-6 h-6 text-black" />
+        <div className="absolute bottom-full right-0 mb-4 bg-cyber-blue text-black font-orbitron font-black text-[10px] px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all whitespace-nowrap uppercase tracking-tighter">
+          Siksha AI Helper
+        </div>
+      </motion.button>
+    )}
     <nav className="glass-panel border-b border-white/10 px-4 py-3 sm:px-6 sm:py-4 flex justify-between items-center sticky top-0 z-30">
       <div className="flex items-center gap-3">
         <div className="bg-cyber-blue/20 p-2 rounded-xl border border-cyber-blue/40 shadow-[0_0_10px_rgba(0,243,255,0.2)]">
@@ -2277,6 +2693,16 @@ const DashboardView = ({
           setSelectedSubjectFilter={setSelectedSubjectFilter}
           setSelectedResource={setSelectedResource}
           setCurrentUser={setCurrentUser}
+          handleAiAsk={handleAiAsk}
+          isAiLoading={isAiLoading}
+          aiPlan={aiPlan}
+          setAiPlan={setAiPlan}
+          currentTest={currentTest}
+          setCurrentTest={setCurrentTest}
+          testAnswers={testAnswers}
+          setTestAnswers={setTestAnswers}
+          testResult={testResult}
+          setTestResult={setTestResult}
         />
       )}
     </main>
@@ -2342,6 +2768,17 @@ const DashboardView = ({
               setSelectedResource={setSelectedResource}
               setEditingResource={setEditingResource}
               setResourceForm={setResourceForm}
+              setShowAiHelper={setShowAiHelper}
+              handleAiAsk={handleAiAsk}
+              isAiLoading={isAiLoading}
+              aiPlan={aiPlan}
+              setAiPlan={setAiPlan}
+              currentTest={currentTest}
+              setCurrentTest={setCurrentTest}
+              testAnswers={testAnswers}
+              setTestAnswers={setTestAnswers}
+              testResult={testResult}
+              setTestResult={setTestResult}
             />
           </motion.div>
         )}
@@ -2349,6 +2786,17 @@ const DashboardView = ({
 
       {/* Global Modals */}
       <AnimatePresence>
+        {showAiHelper && (
+          <AiHelperModal 
+            onClose={() => setShowAiHelper(false)}
+            chatMessages={chatMessages}
+            aiInput={aiInput}
+            setAiInput={setAiInput}
+            handleAiAsk={handleAiAsk}
+            isAiLoading={isAiLoading}
+            chatEndRef={chatEndRef}
+          />
+        )}
         {selectedResource && (
           <ResourceModal resource={selectedResource} onClose={() => setSelectedResource(null)} />
         )}
