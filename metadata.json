@@ -1,5 +1,5 @@
 {
   "name": "EduHub: Admin & Student Portal",
-  "description": "A comprehensive educational platform with an admin portal for resource management and a student portal with an AI NCERT helper.",
+  "description": "A comprehensive educational platform with an admin portal for resource management and a student portal.",
   "requestFramePermissions": []
 }

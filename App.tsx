@@ -4,6 +4,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   User, 
   Lock, 
+  ArrowLeft,
+  ChevronLeft,
+  TrendingUp,
   Video, 
   FileText, 
   HelpCircle, 
@@ -19,16 +22,7 @@ import {
   X,
   Loader2,
   AlertCircle,
-  ArrowLeft,
-  Sparkles,
-  ChevronLeft,
-  TrendingUp,
-  Zap,
-  Play,
-  CheckCircle2,
-  Cpu
 } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
 import ReactMarkdown from 'react-markdown';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -107,11 +101,6 @@ interface Notice {
   createdAt?: any;
 }
 
-interface ChatMessage {
-  role: 'user' | 'model';
-  text: string;
-}
-
 interface LoginViewProps {
   handleLogin: (id: string, pass: string, role: UserRole) => Promise<void>;
   isUploading: boolean;
@@ -147,30 +136,12 @@ interface StudentDashboardProps {
   setCurrentUser: (user: UserData | null) => void;
   resources: Resource[];
   notices: Notice[];
-  studentView: 'main' | 'school' | 'self';
-  setStudentView: (view: 'main' | 'school' | 'self') => void;
+  studentView: 'main' | 'school';
+  setStudentView: (view: 'main' | 'school') => void;
   activeTab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users';
   setActiveTab: (tab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users') => void;
   selectedSubjectFilter: string | null;
   setSelectedSubjectFilter: (sub: string | null) => void;
-  selfStudyTab: 'progress' | 'test' | 'ai';
-  setSelfStudyTab: (tab: 'progress' | 'test' | 'ai') => void;
-  aiPlan: string | null;
-  setAiPlan: (plan: string | null) => void;
-  aiPlanDetails: any;
-  setAiPlanDetails: (details: any) => void;
-  isAiLoading: boolean;
-  handleAiAsk: (mode: 'chat' | 'plan' | 'test' | 'evaluate', prompt?: string) => void;
-  currentTest: any;
-  setCurrentTest: (test: any) => void;
-  testAnswers: Record<number, string>;
-  setTestAnswers: (answers: Record<number, string>) => void;
-  testResult: any;
-  setTestResult: (result: any) => void;
-  chatMessages: any[];
-  aiInput: string;
-  setAiInput: (input: string) => void;
-  chatEndRef: React.RefObject<HTMLDivElement | null>;
   setSelectedResource: (res: Resource | null) => void;
 }
 
@@ -208,30 +179,12 @@ interface DashboardViewProps {
   handleDeleteUser: (id: string) => void;
   handleDeleteResource: (id: string) => void;
   handleDeleteNotice: (id: string) => void;
-  studentView: 'main' | 'school' | 'self';
-  setStudentView: (view: 'main' | 'school' | 'self') => void;
+  studentView: 'main' | 'school';
+  setStudentView: (view: 'main' | 'school') => void;
   activeTab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users';
   setActiveTab: (tab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users') => void;
   selectedSubjectFilter: string | null;
   setSelectedSubjectFilter: (sub: string | null) => void;
-  selfStudyTab: 'progress' | 'test' | 'ai';
-  setSelfStudyTab: (tab: 'progress' | 'test' | 'ai') => void;
-  aiPlan: string | null;
-  setAiPlan: (plan: string | null) => void;
-  aiPlanDetails: any;
-  setAiPlanDetails: (details: any) => void;
-  isAiLoading: boolean;
-  handleAiAsk: (mode: 'chat' | 'plan' | 'test' | 'evaluate', prompt?: string) => void;
-  currentTest: any;
-  setCurrentTest: (test: any) => void;
-  testAnswers: Record<number, string>;
-  setTestAnswers: (answers: Record<number, string>) => void;
-  testResult: any;
-  setTestResult: (result: any) => void;
-  chatMessages: any[];
-  aiInput: string;
-  setAiInput: (input: string) => void;
-  chatEndRef: React.RefObject<HTMLDivElement | null>;
   onSelectResource: (res: Resource) => void;
   adminUserTab: 'students' | 'teachers';
   setAdminUserTab: (tab: 'students' | 'teachers') => void;
@@ -508,7 +461,7 @@ const ResourceModal = ({ resource, onClose }: { resource: Resource, onClose: () 
         )}
       </div>
       <div className="p-4 bg-white/5 border-t border-white/10 text-center">
-        <p className="text-[10px] font-rajdhani font-bold text-white/20 uppercase tracking-[0.3em]">Neural Resource Interface • Shiksha AI</p>
+        <p className="text-[10px] font-rajdhani font-bold text-white/20 uppercase tracking-[0.3em]">Neural Resource Interface</p>
       </div>
     </motion.div>
   </div>
@@ -1269,8 +1222,7 @@ const AppContent: React.FC = () => {
   // Dashboard Navigation State
   const [activeTab, setActiveTab] = useState<'video' | 'note' | 'question' | 'notice' | 'profile' | 'users'>('video');
   const [adminUserTab, setAdminUserTab] = useState<'students' | 'teachers'>('students');
-  const [studentView, setStudentView] = useState<'main' | 'school' | 'self'>('main');
-  const [selfStudyTab, setSelfStudyTab] = useState<'progress' | 'test' | 'ai'>('progress');
+  const [studentView, setStudentView] = useState<'main' | 'school'>('main');
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string | null>(null);
   const [selectedClassFilter, setSelectedClassFilter] = useState<string | null>(null);
 
@@ -1296,18 +1248,6 @@ const AppContent: React.FC = () => {
   const [editingProfile, setEditingProfile] = useState(false);
   const [showResourceForm, setShowResourceForm] = useState(false);
   const [showNoticeForm, setShowNoticeForm] = useState(false);
-  const [showAiHelper, setShowAiHelper] = useState(false);
-
-  // AI Helper State
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [aiInput, setAiInput] = useState('');
-  const [isAiLoading, setIsAiLoading] = useState(false);
-  const [aiPlan, setAiPlan] = useState<string | null>(null);
-  const [aiPlanDetails, setAiPlanDetails] = useState({ status: '', hours: '', goals: '' });
-  const [currentTest, setCurrentTest] = useState<any | null>(null);
-  const [testAnswers, setTestAnswers] = useState<Record<number, string>>({});
-  const [testResult, setTestResult] = useState<any | null>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Validate Connection to Firestore
   useEffect(() => {
@@ -1400,11 +1340,6 @@ const AppContent: React.FC = () => {
     };
     promoteStudents();
   }, [currentUser]);
-
-  // Scroll to bottom of chat
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages]);
 
   // --- Auth Handlers ---
   const handleSignup = async (data: any) => {
@@ -1677,119 +1612,6 @@ const AppContent: React.FC = () => {
       } catch (error) {
         console.error('Delete error:', error);
       }
-    }
-  };
-
-  // --- AI Helper Handler ---
-  const handleAiAsk = async (mode: 'chat' | 'plan' | 'test' | 'evaluate' = 'chat', customPrompt?: string) => {
-    const input = typeof customPrompt === 'string' ? customPrompt : aiInput;
-    if (!input.trim()) return;
-
-    if (mode === 'chat') {
-      const userMsg: ChatMessage = { role: 'user', text: input };
-      setChatMessages(prev => [...prev, userMsg]);
-      setAiInput('');
-    }
-    setIsAiLoading(true);
-
-    try {
-      // Robust API key retrieval for various environments (local, Netlify, etc.)
-      const apiKey = 
-        import.meta.env.VITE_GEMINI_API_KEY || 
-        (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '') || 
-        (typeof process !== 'undefined' ? process.env.VITE_GEMINI_API_KEY : '') ||
-        (window as any).GEMINI_API_KEY ||
-        (window as any).VITE_GEMINI_API_KEY;
-
-      if (!apiKey || apiKey === "" || apiKey === "undefined") {
-        throw new Error('API_KEY_MISSING: Gemini API Key is not configured. Please add VITE_GEMINI_API_KEY to your environment variables in Netlify settings and redeploy.');
-      }
-      const ai = new GoogleGenAI({ apiKey });
-      const studentClass = currentUser?.role === 'student' ? currentUser.class : 'General';
-      
-      let systemInstruction = `You are an expert NCERT helper for ${studentClass}. Answer the following question accurately based on NCERT curriculum. Keep answers concise and helpful for students.`;
-      
-      if (mode === 'plan') {
-        systemInstruction = `You are Shiksha AI, a study planner for ${studentClass}. Based on the student's details, create a monthly study plan for Maths, Science, Hindi, English, and SST. Also provide a weekly timetable to achieve this monthly plan. Use Markdown for formatting.`;
-      } else if (mode === 'test') {
-        systemInstruction = `You are Shiksha AI, a test generator for ${studentClass}. Generate a test for the requested subject and chapter. The test MUST have:
-        - 5 MCQs (1 mark each)
-        - 6 Short Answer Questions (2 marks each)
-        - 1 Long Answer Question (3 marks)
-        Return the test in a structured JSON format: 
-        { 
-          "subject": "Subject Name",
-          "chapter": "Chapter Name",
-          "mcqs": [ { "question": "...", "options": ["A", "B", "C", "D"], "answer": "Correct Option" } ], 
-          "shortAnswers": [ { "question": "...", "answer": "Expected Answer Key Points" } ], 
-          "longAnswer": { "question": "...", "answer": "Expected Detailed Answer Key Points" } 
-        }`;
-      } else if (mode === 'evaluate') {
-        systemInstruction = `You are Shiksha AI. Evaluate the student's answers for the test provided in the input. 
-        The input contains the original test questions, expected answers, and the student's provided answers.
-        Provide a score out of 20, a performance rating (e.g., Excellent, Good, Needs Improvement), and detailed solutions for each question.
-        Return the evaluation in a structured JSON format:
-        {
-          "score": number,
-          "performance": "string",
-          "solutions": "Markdown string containing detailed solutions and feedback for each question"
-        }`;
-      }
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: input,
-        config: {
-          systemInstruction,
-          responseMimeType: (mode === 'test' || mode === 'evaluate') ? "application/json" : "text/plain",
-        }
-      });
-
-      if (mode === 'plan') {
-        setAiPlan(response.text || "Failed to generate plan.");
-      } else if (mode === 'test' || mode === 'evaluate') {
-        try {
-          const jsonData = JSON.parse(response.text || '{}');
-          if (mode === 'test') {
-            setCurrentTest(jsonData);
-            setTestAnswers({});
-            setTestResult(null);
-          } else {
-            setTestResult(jsonData);
-          }
-        } catch (e) {
-          console.error(`Failed to parse ${mode} JSON`, e);
-          alert(`Failed to ${mode === 'test' ? 'generate' : 'evaluate'} test. Please try again.`);
-        }
-      } else {
-        const aiMsg: ChatMessage = { role: 'model', text: response.text || "I'm sorry, I couldn't process that request." };
-        setChatMessages(prev => [...prev, aiMsg]);
-      }
-    } catch (error: any) {
-      console.error('AI Error:', error);
-      let errorText = "Error connecting to AI.";
-      const errorMessage = error.message || "";
-      
-      if (errorMessage.includes('API_KEY_MISSING')) {
-        errorText = errorMessage;
-      } else if (errorMessage.toLowerCase().includes('quota')) {
-        errorText = "AI Quota exceeded for today. Please try again tomorrow.";
-      } else if (errorMessage.toLowerCase().includes('api key not valid') || errorMessage.toLowerCase().includes('invalid api key')) {
-        errorText = "Invalid Gemini API Key. Please check your key in Netlify settings and redeploy.";
-      } else if (errorMessage.includes('API key') && !errorMessage.includes('MISSING')) {
-        // If it's a generic API key error from the SDK
-        errorText = `AI Configuration Error: ${errorMessage}`;
-      } else if (errorMessage) {
-        errorText = `AI Error: ${errorMessage}`;
-      }
-      
-      if (mode === 'chat') {
-        setChatMessages(prev => [...prev, { role: 'model', text: errorText }]);
-      } else {
-        alert(errorText);
-      }
-    } finally {
-      setIsAiLoading(false);
     }
   };
 
@@ -2200,11 +2022,7 @@ const SignupView: React.FC<SignupViewProps> = ({ handleSignup, setView, signupTy
 const StudentDashboard = ({ 
   currentUser, setCurrentUser, resources, notices, studentView, setStudentView, 
   activeTab, setActiveTab, selectedSubjectFilter, setSelectedSubjectFilter, 
-  selfStudyTab, setSelfStudyTab, aiPlan, setAiPlan, aiPlanDetails, 
-  setAiPlanDetails, isAiLoading, handleAiAsk, currentTest, 
-  setCurrentTest, testAnswers, setTestAnswers, testResult, 
-  setTestResult, chatMessages, aiInput, setAiInput, 
-  chatEndRef, setSelectedResource 
+  setSelectedResource 
 }: StudentDashboardProps) => {
     const student = currentUser as UserData;
     const studentSubjects = CLASS_SUBJECTS[student.class!] || [];
@@ -2216,31 +2034,18 @@ const StudentDashboard = ({
 
     if (studentView === 'main') {
       return (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8 max-w-4xl mx-auto py-10 sm:py-20">
+        <div className="flex justify-center max-w-4xl mx-auto py-10 sm:py-20">
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setStudentView('school')}
-            className="glass-panel p-8 sm:p-12 rounded-[40px] border-2 border-cyber-blue/20 hover:border-cyber-blue transition-all flex flex-col items-center justify-center gap-6 group relative overflow-hidden h-[200px] sm:h-[300px]"
+            className="glass-panel p-8 sm:p-12 rounded-[40px] border-2 border-cyber-blue/20 hover:border-cyber-blue transition-all flex flex-col items-center justify-center gap-6 group relative overflow-hidden h-[200px] sm:h-[300px] w-full max-w-md"
           >
             <div className="absolute inset-0 bg-cyber-blue/5 group-hover:bg-cyber-blue/10 transition-all" />
             <div className="bg-cyber-blue/20 p-6 rounded-3xl border border-cyber-blue/40 shadow-[0_0_20px_rgba(0,243,255,0.2)] group-hover:shadow-[0_0_30px_rgba(0,243,255,0.4)] transition-all">
               <GraduationCap className="w-12 h-12 sm:w-16 sm:h-16 text-cyber-blue" />
             </div>
             <h3 className="font-orbitron font-black text-white text-xl sm:text-3xl uppercase tracking-tighter neon-text">School Study</h3>
-          </motion.button>
-
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setStudentView('self')}
-            className="glass-panel p-8 sm:p-12 rounded-[40px] border-2 border-cyber-purple/20 hover:border-cyber-purple transition-all flex flex-col items-center justify-center gap-6 group relative overflow-hidden h-[200px] sm:h-[300px]"
-          >
-            <div className="absolute inset-0 bg-cyber-purple/5 group-hover:bg-cyber-purple/10 transition-all" />
-            <div className="bg-cyber-purple/20 p-6 rounded-3xl border border-cyber-purple/40 shadow-[0_0_20px_rgba(157,0,255,0.2)] group-hover:shadow-[0_0_30px_rgba(157,0,255,0.4)] transition-all">
-              <Sparkles className="w-12 h-12 sm:w-16 sm:h-16 text-cyber-purple" />
-            </div>
-            <h3 className="font-orbitron font-black text-white text-xl sm:text-3xl uppercase tracking-tighter neon-text-purple">Self Study</h3>
           </motion.button>
         </div>
       );
@@ -2367,334 +2172,6 @@ const StudentDashboard = ({
         </div>
       );
     }
-
-    if (studentView === 'self') {
-      return (
-        <div className="space-y-6 sm:space-y-8">
-          <div className="flex items-center justify-between">
-            <button onClick={() => setStudentView('main')} className="flex items-center gap-2 text-white/40 hover:text-cyber-purple transition-all font-orbitron font-bold text-xs uppercase tracking-widest">
-              <ChevronLeft className="w-4 h-4" /> Back to Portal
-            </button>
-            <h3 className="font-orbitron font-black text-white text-lg sm:text-xl uppercase tracking-tighter">Self Study</h3>
-          </div>
-
-          <div className="flex gap-2 sm:gap-4 p-1 bg-white/5 rounded-2xl border border-white/10">
-            {[
-              { id: 'progress', label: 'Study Progress', icon: TrendingUp },
-              { id: 'test', label: 'Test Series', icon: HelpCircle },
-              { id: 'ai', label: 'AI Assistance', icon: Sparkles },
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setSelfStudyTab(tab.id as any)}
-                className={`flex-1 py-3 sm:py-4 rounded-xl font-orbitron font-bold transition-all text-[10px] sm:text-sm uppercase tracking-wider flex items-center justify-center gap-2 ${selfStudyTab === tab.id ? 'bg-cyber-purple text-white shadow-[0_0_15px_rgba(157,0,255,0.3)]' : 'text-white/40 hover:text-white/60'}`}
-              >
-                <tab.icon className="w-4 h-4" />
-                <span className="hidden sm:inline">{tab.label}</span>
-              </button>
-            ))}
-          </div>
-
-          <div className="glass-panel p-6 sm:p-10 rounded-[40px] border border-white/10 min-h-[400px]">
-            {selfStudyTab === 'progress' && (
-              <div className="space-y-8">
-                {!aiPlan ? (
-                  <div className="max-w-2xl mx-auto space-y-8">
-                    <div className="text-center space-y-4">
-                      <div className="bg-cyber-purple/20 w-20 h-20 rounded-full flex items-center justify-center mx-auto border border-cyber-purple/40">
-                        <Sparkles className="w-10 h-10 text-cyber-purple" />
-                      </div>
-                      <h4 className="text-2xl font-orbitron font-black text-white uppercase tracking-tighter">Generate Your Study Plan</h4>
-                      <p className="text-white/60 font-rajdhani text-lg">Shiksha AI will create a personalized monthly plan and weekly timetable based on your class and subjects.</p>
-                    </div>
-
-                    <div className="space-y-6 bg-white/5 p-8 rounded-[32px] border border-white/10">
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-orbitron font-bold text-white/40 uppercase tracking-widest">Current Study Status</label>
-                        <textarea 
-                          placeholder="e.g., I've completed 2 chapters of Maths, struggling with Science..."
-                          className="w-full h-24 bg-white/5 border border-white/10 rounded-xl p-4 text-white font-rajdhani outline-none focus:border-cyber-purple/50"
-                          value={aiPlanDetails.status}
-                          onChange={(e) => setAiPlanDetails({ ...aiPlanDetails, status: e.target.value })}
-                        />
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-orbitron font-bold text-white/40 uppercase tracking-widest">Study Hours / Day</label>
-                          <input 
-                            type="number"
-                            placeholder="e.g., 4"
-                            className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl outline-none text-white font-rajdhani"
-                            value={aiPlanDetails.hours}
-                            onChange={(e) => setAiPlanDetails({ ...aiPlanDetails, hours: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-orbitron font-bold text-white/40 uppercase tracking-widest">Monthly Goal</label>
-                          <input 
-                            type="text"
-                            placeholder="e.g., Complete half syllabus"
-                            className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl outline-none text-white font-rajdhani"
-                            value={aiPlanDetails.goals}
-                            onChange={(e) => setAiPlanDetails({ ...aiPlanDetails, goals: e.target.value })}
-                          />
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => {
-                          const prompt = `
-                            Student Details:
-                            - Current Status: ${aiPlanDetails.status}
-                            - Study Hours: ${aiPlanDetails.hours} hours/day
-                            - Goals: ${aiPlanDetails.goals}
-                          `;
-                          handleAiAsk('plan', prompt);
-                        }}
-                        disabled={isAiLoading || !aiPlanDetails.status || !aiPlanDetails.hours}
-                        className="w-full cyber-button bg-cyber-purple text-white px-10 py-4 rounded-2xl font-orbitron font-black uppercase tracking-tighter flex items-center justify-center gap-3 disabled:opacity-50"
-                      >
-                        {isAiLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : <Zap className="w-6 h-6" />}
-                        Generate Neural Plan
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    <div className="flex justify-between items-center">
-                      <h4 className="text-xl font-orbitron font-black text-cyber-purple uppercase tracking-tighter">Your Personalized Study Plan</h4>
-                      <button onClick={() => setAiPlan(null)} className="text-white/40 hover:text-white transition-all text-xs font-orbitron font-bold uppercase tracking-widest">Regenerate</button>
-                    </div>
-                    <div className="prose prose-invert max-w-none bg-white/5 p-6 sm:p-8 rounded-3xl border border-white/10">
-                      <ReactMarkdown>{aiPlan}</ReactMarkdown>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {selfStudyTab === 'test' && (
-              <div className="space-y-8">
-                {!currentTest ? (
-                  <div className="max-w-xl mx-auto space-y-6">
-                    <div className="text-center space-y-4">
-                      <div className="bg-amber-500/20 w-20 h-20 rounded-full flex items-center justify-center mx-auto border border-amber-500/40">
-                        <HelpCircle className="w-10 h-10 text-amber-400" />
-                      </div>
-                      <h4 className="text-2xl font-orbitron font-black text-white uppercase tracking-tighter">Neural Test Series</h4>
-                      <p className="text-white/60 font-rajdhani text-lg">Select a subject and chapter to generate a comprehensive test.</p>
-                    </div>
-                    
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-orbitron font-bold text-white/40 uppercase tracking-widest">Subject</label>
-                        <select id="test-subject" className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl outline-none text-white font-rajdhani">
-                          {studentSubjects.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
-                        </select>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-orbitron font-bold text-white/40 uppercase tracking-widest">Chapter Name</label>
-                        <input id="test-chapter" type="text" placeholder="Enter chapter name..." className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl outline-none text-white font-rajdhani" />
-                      </div>
-                      <button 
-                        onClick={() => {
-                          const sub = (document.getElementById('test-subject') as HTMLSelectElement).value;
-                          const chap = (document.getElementById('test-chapter') as HTMLInputElement).value;
-                          if (!chap) return alert('Please enter chapter name');
-                          handleAiAsk('test', `Subject: ${sub}, Chapter: ${chap}`);
-                        }}
-                        disabled={isAiLoading}
-                        className="w-full cyber-button bg-amber-500 text-black px-10 py-4 rounded-2xl font-orbitron font-black uppercase tracking-tighter flex items-center justify-center gap-3 disabled:opacity-50"
-                      >
-                        {isAiLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : <Play className="w-6 h-6" />}
-                        Initialize Assessment
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-8">
-                    <div className="flex justify-between items-center border-b border-white/10 pb-6">
-                      <div>
-                        <h4 className="text-xl font-orbitron font-black text-amber-400 uppercase tracking-tighter">{currentTest.subject}</h4>
-                        <p className="text-white/40 font-rajdhani text-sm uppercase tracking-widest">Chapter: {currentTest.chapter}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-2xl font-orbitron font-black text-white">20 Marks</p>
-                        <p className="text-[10px] font-rajdhani font-bold text-white/40 uppercase tracking-widest">Total Weightage</p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-10">
-                      {/* MCQs */}
-                      <div className="space-y-6">
-                        <h5 className="font-orbitron font-bold text-white uppercase tracking-widest text-sm border-l-4 border-cyber-blue pl-4">Section A: MCQs (1 Mark Each)</h5>
-                        {currentTest.mcqs.map((q: any, i: number) => (
-                          <div key={i} className="space-y-4 bg-white/5 p-6 rounded-2xl border border-white/5">
-                            <p className="text-white font-rajdhani text-lg"><span className="text-cyber-blue font-bold mr-2">Q{i+1}.</span> {q.question}</p>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              {q.options.map((opt: string, j: number) => (
-                                <button 
-                                  key={j}
-                                  onClick={() => setTestAnswers({ ...testAnswers, [i]: opt })}
-                                  className={`px-4 py-3 rounded-xl font-rajdhani text-left transition-all border ${testAnswers[i] === opt ? 'bg-cyber-blue/20 border-cyber-blue text-white' : 'bg-white/5 border-white/10 text-white/60 hover:border-white/30'}`}
-                                >
-                                  {opt}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Short Answers */}
-                      <div className="space-y-6">
-                        <h5 className="font-orbitron font-bold text-white uppercase tracking-widest text-sm border-l-4 border-cyber-purple pl-4">Section B: Short Answers (2 Marks Each)</h5>
-                        {currentTest.shortAnswers.map((q: any, i: number) => (
-                          <div key={i} className="space-y-4 bg-white/5 p-6 rounded-2xl border border-white/5">
-                            <p className="text-white font-rajdhani text-lg"><span className="text-cyber-purple font-bold mr-2">Q{i+6}.</span> {q.question}</p>
-                            <textarea 
-                              placeholder="Type your answer here..."
-                              className="w-full h-32 bg-slate-900/80 border border-white/20 rounded-xl p-4 text-white font-rajdhani outline-none focus:border-cyber-purple/50 shadow-inner"
-                              value={testAnswers[i+5] || ''}
-                              onChange={(e) => setTestAnswers({ ...testAnswers, [i+5]: e.target.value })}
-                            />
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Long Answer */}
-                      <div className="space-y-6">
-                        <h5 className="font-orbitron font-bold text-white uppercase tracking-widest text-sm border-l-4 border-amber-500 pl-4">Section C: Long Answer (3 Marks)</h5>
-                        <div className="space-y-4 bg-white/5 p-6 rounded-2xl border border-white/5">
-                          <p className="text-white font-rajdhani text-lg"><span className="text-amber-500 font-bold mr-2">Q12.</span> {currentTest.longAnswer.question}</p>
-                          <textarea 
-                            placeholder="Type your detailed answer here..."
-                            className="w-full h-64 bg-slate-900/80 border border-white/20 rounded-xl p-4 text-white font-rajdhani outline-none focus:border-amber-500/50 shadow-inner"
-                            value={testAnswers[11] || ''}
-                            onChange={(e) => setTestAnswers({ ...testAnswers, 11: e.target.value })}
-                          />
-                        </div>
-                      </div>
-
-                      <button 
-                        onClick={() => {
-                          const evaluationPrompt = `
-                            Test Data: ${JSON.stringify(currentTest)}
-                            Student Answers: ${JSON.stringify(testAnswers)}
-                          `;
-                          handleAiAsk('evaluate', evaluationPrompt);
-                        }}
-                        disabled={isAiLoading}
-                        className="w-full cyber-button bg-emerald-500 text-black px-10 py-5 rounded-2xl font-orbitron font-black uppercase tracking-tighter flex items-center justify-center gap-3 shadow-[0_0_20px_rgba(16,185,129,0.3)] disabled:opacity-50"
-                      >
-                        {isAiLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : <CheckCircle2 className="w-6 h-6" />}
-                        Submit Neural Assessment
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {testResult && (
-                  <div className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[60] flex items-center justify-center p-4">
-                    <motion.div 
-                      initial={{ scale: 0.9, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      className="glass-panel w-full max-w-4xl max-h-[90vh] rounded-[40px] border border-white/10 flex flex-col overflow-hidden"
-                    >
-                      <div className="p-8 border-b border-white/10 flex justify-between items-center bg-white/5">
-                        <h3 className="text-2xl font-orbitron font-black text-white uppercase tracking-tighter">Assessment Result</h3>
-                        <button onClick={() => { setTestResult(null); setCurrentTest(null); setTestAnswers({}); }} className="p-2 hover:bg-white/10 rounded-full transition-all text-white/40"><X className="w-6 h-6" /></button>
-                      </div>
-                      <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                          <div className="glass-panel p-6 rounded-3xl border border-white/10 text-center">
-                            <p className="text-4xl font-orbitron font-black text-cyber-blue">{testResult.score}/20</p>
-                            <p className="text-[10px] font-orbitron font-bold text-white/40 uppercase tracking-widest mt-2">Total Score</p>
-                          </div>
-                          <div className="glass-panel p-6 rounded-3xl border border-white/10 text-center">
-                            <p className="text-4xl font-orbitron font-black text-cyber-purple">{Math.round((testResult.score/20)*100)}%</p>
-                            <p className="text-[10px] font-orbitron font-bold text-white/40 uppercase tracking-widest mt-2">Accuracy</p>
-                          </div>
-                          <div className="glass-panel p-6 rounded-3xl border border-white/10 text-center">
-                            <p className="text-xl font-orbitron font-bold text-emerald-400 uppercase">{testResult.performance}</p>
-                            <p className="text-[10px] font-orbitron font-bold text-white/40 uppercase tracking-widest mt-2">Performance</p>
-                          </div>
-                        </div>
-
-                        <div className="space-y-6">
-                          <h4 className="text-lg font-orbitron font-black text-white uppercase tracking-widest border-l-4 border-cyber-blue pl-4">Detailed Solutions</h4>
-                          <div className="prose prose-invert max-w-none bg-white/5 p-6 rounded-3xl border border-white/10">
-                            <ReactMarkdown>{testResult.solutions}</ReactMarkdown>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="p-8 bg-white/5 border-t border-white/10 flex justify-end">
-                        <button 
-                          onClick={() => { setTestResult(null); setCurrentTest(null); setTestAnswers({}); }}
-                          className="cyber-button px-10 py-4 bg-cyber-blue text-black rounded-2xl font-orbitron font-black uppercase tracking-tighter"
-                        >
-                          Close Assessment
-                        </button>
-                      </div>
-                    </motion.div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {selfStudyTab === 'ai' && (
-              <div className="h-full flex flex-col space-y-6">
-                <div className="text-center space-y-2">
-                  <h4 className="text-2xl font-orbitron font-black text-white uppercase tracking-tighter">AI Assistance</h4>
-                  <p className="text-white/40 font-rajdhani uppercase tracking-widest text-xs">Direct Neural Link with Shiksha AI</p>
-                </div>
-                
-                <div className="flex-1 glass-panel rounded-3xl border border-white/10 overflow-hidden flex flex-col h-[500px]">
-                  <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-950/30 custom-scrollbar">
-                    {chatMessages.map((msg, i) => (
-                      <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[85%] p-4 rounded-2xl ${msg.role === 'user' ? 'bg-cyber-purple text-white rounded-tr-none' : 'bg-white/10 text-white rounded-tl-none border border-white/10'}`}>
-                          <div className="text-sm font-rajdhani leading-relaxed prose prose-invert max-w-none">
-                            <ReactMarkdown>{msg.text}</ReactMarkdown>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    {isAiLoading && (
-                      <div className="flex justify-start">
-                        <div className="bg-white/10 p-3 rounded-2xl rounded-tl-none flex items-center gap-2 border border-white/10">
-                          <Loader2 className="w-3 h-3 animate-spin text-cyber-blue" />
-                          <span className="text-xs font-rajdhani text-white/50">Processing...</span>
-                        </div>
-                      </div>
-                    )}
-                    <div ref={chatEndRef} />
-                  </div>
-                  <div className="p-4 bg-white/5 border-t border-white/10">
-                    <div className="flex gap-2">
-                    <input 
-                      type="text" 
-                      placeholder="Ask Shiksha AI anything..."
-                      className="flex-1 px-4 py-3 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-cyber-blue/50 text-white font-rajdhani"
-                      value={aiInput}
-                      onChange={(e) => setAiInput(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && handleAiAsk('chat')}
-                    />
-                      <button 
-                        onClick={() => handleAiAsk('chat')}
-                        disabled={isAiLoading || !aiInput.trim()}
-                        className="bg-cyber-blue text-black p-3 rounded-xl hover:bg-white transition-all disabled:opacity-50"
-                      >
-                        <Send className="w-5 h-5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      );
-    }
     return null;
 };
 
@@ -2718,24 +2195,6 @@ const DashboardView = ({
   setActiveTab, 
   selectedSubjectFilter, 
   setSelectedSubjectFilter, 
-  selfStudyTab, 
-  setSelfStudyTab, 
-  aiPlan, 
-  setAiPlan, 
-  aiPlanDetails, 
-  setAiPlanDetails, 
-  isAiLoading, 
-  handleAiAsk, 
-  currentTest, 
-  setCurrentTest, 
-  testAnswers, 
-  setTestAnswers, 
-  testResult, 
-  setTestResult, 
-  chatMessages, 
-  aiInput, 
-  setAiInput, 
-  chatEndRef, 
   onSelectResource, 
   adminUserTab, 
   setAdminUserTab,
@@ -2816,24 +2275,6 @@ const DashboardView = ({
           setActiveTab={setActiveTab}
           selectedSubjectFilter={selectedSubjectFilter}
           setSelectedSubjectFilter={setSelectedSubjectFilter}
-          selfStudyTab={selfStudyTab}
-          setSelfStudyTab={setSelfStudyTab}
-          aiPlan={aiPlan}
-          setAiPlan={setAiPlan}
-          aiPlanDetails={aiPlanDetails}
-          setAiPlanDetails={setAiPlanDetails}
-          isAiLoading={isAiLoading}
-          handleAiAsk={handleAiAsk}
-          currentTest={currentTest}
-          setCurrentTest={setCurrentTest}
-          testAnswers={testAnswers}
-          setTestAnswers={setTestAnswers}
-          testResult={testResult}
-          setTestResult={setTestResult}
-          chatMessages={chatMessages}
-          aiInput={aiInput}
-          setAiInput={setAiInput}
-          chatEndRef={chatEndRef}
           setSelectedResource={setSelectedResource}
           setCurrentUser={setCurrentUser}
         />
@@ -2895,24 +2336,6 @@ const DashboardView = ({
               setActiveTab={setActiveTab}
               selectedSubjectFilter={selectedSubjectFilter}
               setSelectedSubjectFilter={setSelectedSubjectFilter}
-              selfStudyTab={selfStudyTab}
-              setSelfStudyTab={setSelfStudyTab}
-              aiPlan={aiPlan}
-              setAiPlan={setAiPlan}
-              aiPlanDetails={aiPlanDetails}
-              setAiPlanDetails={setAiPlanDetails}
-              isAiLoading={isAiLoading}
-              handleAiAsk={handleAiAsk}
-              currentTest={currentTest}
-              setCurrentTest={setCurrentTest}
-              testAnswers={testAnswers}
-              setTestAnswers={setTestAnswers}
-              testResult={testResult}
-              setTestResult={setTestResult}
-              chatMessages={chatMessages}
-              aiInput={aiInput}
-              setAiInput={setAiInput}
-              chatEndRef={chatEndRef}
               onSelectResource={(res) => setSelectedResource(res)}
               adminUserTab={adminUserTab}
               setAdminUserTab={setAdminUserTab}
@@ -2956,90 +2379,6 @@ const DashboardView = ({
             setSelectedFile={setSelectedFile}
             currentUser={currentUser}
           />
-        )}
-      </AnimatePresence>
-
-      {/* AI Helper Floating Button */}
-      {view === 'dashboard' && currentUser?.role === 'student' && (
-        <button 
-          onClick={() => setShowAiHelper(true)}
-          className="fixed bottom-6 right-6 w-16 h-16 bg-cyber-purple rounded-full shadow-[0_0_20px_rgba(157,0,255,0.5)] flex items-center justify-center text-white z-40 hover:scale-110 transition-all group"
-        >
-          <Sparkles className="w-8 h-8 group-hover:rotate-12 transition-transform" />
-          <div className="absolute -top-12 right-0 bg-white text-black px-3 py-1 rounded-lg text-[10px] font-orbitron font-bold opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-            ASK SHIKSHA AI
-          </div>
-        </button>
-      )}
-
-      {/* AI Helper Modal */}
-      <AnimatePresence>
-        {showAiHelper && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="glass-panel w-full max-w-2xl h-[80vh] rounded-[40px] border border-white/10 flex flex-col overflow-hidden"
-            >
-              <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/5">
-                <div className="flex items-center gap-3">
-                  <div className="bg-cyber-purple/20 p-2 rounded-xl border border-cyber-purple/40">
-                    <Sparkles className="text-cyber-purple w-5 h-5" />
-                  </div>
-                  <h3 className="text-xl font-orbitron font-black text-white uppercase tracking-tighter">Shiksha AI Helper</h3>
-                </div>
-                <button onClick={() => setShowAiHelper(false)} className="p-2 hover:bg-white/10 rounded-full transition-all text-white/40"><X className="w-6 h-6" /></button>
-              </div>
-              
-              <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar bg-slate-950/30">
-                {chatMessages.length === 0 && (
-                  <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-40">
-                    <Cpu className="w-16 h-16" />
-                    <p className="font-orbitron font-bold text-sm uppercase tracking-widest">How can I help you today?</p>
-                  </div>
-                )}
-                {chatMessages.map((msg, i) => (
-                  <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[85%] p-4 rounded-2xl ${msg.role === 'user' ? 'bg-cyber-purple text-white rounded-tr-none' : 'bg-white/10 text-white rounded-tl-none border border-white/10'}`}>
-                      <div className="text-sm font-rajdhani leading-relaxed prose prose-invert max-w-none">
-                        <ReactMarkdown>{msg.text}</ReactMarkdown>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {isAiLoading && (
-                  <div className="flex justify-start">
-                    <div className="bg-white/10 p-3 rounded-2xl rounded-tl-none flex items-center gap-2 border border-white/10">
-                      <Loader2 className="w-3 h-3 animate-spin text-cyber-blue" />
-                      <span className="text-xs font-rajdhani text-white/50">Processing...</span>
-                    </div>
-                  </div>
-                )}
-                <div ref={chatEndRef} />
-              </div>
-
-              <div className="p-4 bg-white/5 border-t border-white/10">
-                <div className="flex gap-2">
-                  <input 
-                    type="text" 
-                    placeholder="Ask anything about your studies..."
-                    className="flex-1 px-4 py-3 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-cyber-purple/50 text-white font-rajdhani"
-                    value={aiInput}
-                    onChange={(e) => setAiInput(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleAiAsk('chat')}
-                  />
-                  <button 
-                    onClick={() => handleAiAsk('chat')}
-                    disabled={isAiLoading || !aiInput.trim()}
-                    className="bg-cyber-purple text-white p-3 rounded-xl hover:bg-white hover:text-black transition-all disabled:opacity-50"
-                  >
-                    <Send className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
         )}
       </AnimatePresence>
 
