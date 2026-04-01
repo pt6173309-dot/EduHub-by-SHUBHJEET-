@@ -22,8 +22,11 @@ import {
   X,
   Loader2,
   AlertCircle,
+  Download,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore,
@@ -861,9 +864,20 @@ const ProfileSection = ({
         await setDoc(doc(db, 'users', currentUser!.uid), profileData, { merge: true });
         setCurrentUser(profileData as UserData);
         setEditingProfile(false);
+        alert('Profile updated successfully!');
       } catch (error) {
         console.error('Profile update error:', error);
+        alert('Failed to update profile.');
       }
+    };
+
+    const toggleMultiSelect = (field: 'classes' | 'subjects', value: string) => {
+      setProfileData(prev => ({
+        ...prev,
+        [field]: (prev as any)[field]?.includes(value) 
+          ? (prev as any)[field].filter((v: string) => v !== value)
+          : [...((prev as any)[field] || []), value]
+      }));
     };
 
     return (
@@ -872,7 +886,10 @@ const ProfileSection = ({
           <div className="flex justify-between items-start mb-6 sm:mb-8">
             <h3 className="text-xl sm:text-2xl font-orbitron font-black text-white tracking-tighter uppercase">My Profile</h3>
             <button 
-              onClick={() => setEditingProfile(!editingProfile)}
+              onClick={() => {
+                setEditingProfile(!editingProfile);
+                if (!editingProfile) setProfileData({ ...currentUser });
+              }}
               className="px-3 py-1.5 sm:px-4 sm:py-2 bg-white/5 text-white/40 rounded-xl font-orbitron font-bold text-[10px] sm:text-xs hover:text-white hover:bg-white/10 transition-all border border-white/10 uppercase tracking-widest"
             >
               {editingProfile ? 'Cancel' : 'Edit Profile'}
@@ -894,7 +911,7 @@ const ProfileSection = ({
                 )}
               </div>
               <div>
-                <label className="text-[10px] font-orbitron font-bold text-white/30 uppercase tracking-widest mb-1 block">Neural ID / Mobile</label>
+                <label className="text-[10px] font-orbitron font-bold text-white/30 uppercase tracking-widest mb-1 block">Mobile Number</label>
                 {editingProfile ? (
                   <input 
                     className="w-full px-4 py-2 sm:py-3 bg-white/5 border border-white/10 rounded-xl outline-none text-white font-rajdhani focus:border-cyber-blue/50 transition-all"
@@ -902,7 +919,19 @@ const ProfileSection = ({
                     onChange={(e) => setProfileData({ ...profileData, mobile: e.target.value })}
                   />
                 ) : (
-                  <p className="font-orbitron font-bold text-white text-base sm:text-lg tracking-tight">{currentUser?.mobile}</p>
+                  <p className="font-orbitron font-bold text-white text-base sm:text-lg tracking-tight">{currentUser?.mobile || 'Not Set'}</p>
+                )}
+              </div>
+              <div>
+                <label className="text-[10px] font-orbitron font-bold text-white/30 uppercase tracking-widest mb-1 block">Neural ID</label>
+                {editingProfile ? (
+                  <input 
+                    className="w-full px-4 py-2 sm:py-3 bg-white/5 border border-white/10 rounded-xl outline-none text-white font-rajdhani focus:border-cyber-blue/50 transition-all"
+                    value={currentUser?.role === 'student' ? profileData.studentId : profileData.teacherId}
+                    onChange={(e) => setProfileData({ ...profileData, [currentUser?.role === 'student' ? 'studentId' : 'teacherId']: e.target.value })}
+                  />
+                ) : (
+                  <p className="font-orbitron font-bold text-white text-base sm:text-lg tracking-tight">{currentUser?.studentId || currentUser?.teacherId || currentUser?.email}</p>
                 )}
               </div>
             </div>
@@ -911,22 +940,60 @@ const ProfileSection = ({
                 <>
                   <div>
                     <label className="text-[10px] font-orbitron font-bold text-white/30 uppercase tracking-widest mb-2 block">Specializations</label>
-                    <div className="flex flex-wrap gap-2">
-                      {currentUser.subjects?.map(s => <span key={s} className="px-3 py-1 bg-cyber-purple/20 text-cyber-purple rounded-lg text-[10px] font-orbitron font-bold uppercase tracking-widest border border-cyber-purple/20">{s}</span>)}
-                    </div>
+                    {editingProfile ? (
+                      <div className="flex flex-wrap gap-2 p-2 bg-white/5 rounded-xl border border-white/10">
+                        {ALL_SUBJECTS.map(s => (
+                          <button
+                            key={s}
+                            onClick={() => toggleMultiSelect('subjects', s)}
+                            className={`px-2 py-1 rounded-lg text-[8px] font-orbitron font-bold uppercase transition-all ${profileData.subjects?.includes(s) ? 'bg-cyber-purple text-white' : 'bg-white/5 text-white/40'}`}
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {currentUser.subjects?.map(s => <span key={s} className="px-3 py-1 bg-cyber-purple/20 text-cyber-purple rounded-lg text-[10px] font-orbitron font-bold uppercase tracking-widest border border-cyber-purple/20">{s}</span>)}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="text-[10px] font-orbitron font-bold text-white/30 uppercase tracking-widest mb-2 block">Assigned Sectors</label>
-                    <div className="flex flex-wrap gap-2">
-                      {currentUser.classes?.map(c => <span key={c} className="px-3 py-1 bg-cyber-blue/20 text-cyber-blue rounded-lg text-[10px] font-orbitron font-bold uppercase tracking-widest border border-cyber-blue/20">{c}</span>)}
-                    </div>
+                    {editingProfile ? (
+                      <div className="grid grid-cols-2 gap-2 p-2 bg-white/5 rounded-xl border border-white/10 max-h-32 overflow-y-auto">
+                        {ALL_CLASSES.map(c => (
+                          <button
+                            key={c}
+                            onClick={() => toggleMultiSelect('classes', c)}
+                            className={`px-2 py-1 rounded-lg text-[8px] font-orbitron font-bold uppercase transition-all ${profileData.classes?.includes(c) ? 'bg-cyber-blue text-black' : 'bg-white/5 text-white/40'}`}
+                          >
+                            {c}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {currentUser.classes?.map(c => <span key={c} className="px-3 py-1 bg-cyber-blue/20 text-cyber-blue rounded-lg text-[10px] font-orbitron font-bold uppercase tracking-widest border border-cyber-blue/20">{c}</span>)}
+                      </div>
+                    )}
                   </div>
                 </>
               )}
               {currentUser?.role === 'student' && (
                 <div>
                   <label className="text-[10px] font-orbitron font-bold text-white/30 uppercase tracking-widest mb-1 block">Sector / Class</label>
-                  <p className="font-orbitron font-bold text-white text-base sm:text-lg tracking-tight">{currentUser.class}</p>
+                  {editingProfile ? (
+                    <select
+                      value={profileData.class}
+                      onChange={(e) => setProfileData({ ...profileData, class: e.target.value })}
+                      className="w-full px-4 py-2 sm:py-3 bg-white/5 border border-white/10 rounded-xl outline-none text-white font-rajdhani focus:border-cyber-blue/50 transition-all appearance-none"
+                    >
+                      {ALL_CLASSES.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
+                    </select>
+                  ) : (
+                    <p className="font-orbitron font-bold text-white text-base sm:text-lg tracking-tight">{currentUser.class}</p>
+                  )}
                 </div>
               )}
             </div>
@@ -1385,6 +1452,30 @@ const AppContent: React.FC = () => {
   }, [chatMessages]);
 
   // --- Auth Handlers ---
+  const downloadPdf = async (elementId: string, filename: string) => {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#020617' // slate-950
+      });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`${filename}.pdf`);
+    } catch (error) {
+      console.error('PDF generation error:', error);
+      alert('Failed to generate PDF. Please try again.');
+    }
+  };
+
   const handleSignup = async (data: any) => {
     const id = (data.role === 'student' ? data.studentId : data.teacherId)?.trim();
     if (!id) {
@@ -1559,8 +1650,8 @@ const AppContent: React.FC = () => {
   };
 
   const handleAddResource = async () => {
-    if (!resourceForm.title || (!resourceForm.content && !selectedFile) || !resourceForm.subject || !resourceForm.className) {
-      alert('Please fill all fields (Title, Subject, Class, and either Content or File)');
+    if (!resourceForm.title || !resourceForm.content || !resourceForm.subject || !resourceForm.className) {
+      alert('Please fill all fields (Title, Subject, Class, and Content)');
       return;
     }
 
@@ -1571,15 +1662,10 @@ const AppContent: React.FC = () => {
         await signInAnonymously(auth);
       }
 
-      let fileData = null;
-      if (selectedFile) {
-        fileData = await uploadFile(selectedFile, 'resources');
-      }
-
       const dataToSave = {
         ...resourceForm,
-        fileUrl: fileData?.url || editingResource?.fileUrl || '',
-        fileName: fileData?.name || editingResource?.fileName || '',
+        fileUrl: '',
+        fileName: '',
         updatedAt: serverTimestamp()
       };
 
@@ -1601,16 +1687,15 @@ const AppContent: React.FC = () => {
       setShowResourceForm(false);
     } catch (error: any) {
       console.error('Save error details:', error);
-      const errInfo = handleFirestoreError(error, OperationType.WRITE, 'resources');
-      // Show detailed error to the user so they can report it
-      alert(`UPLOAD FAILED!\n\nError Code: ${error.code || 'unknown'}\nMessage: ${error.message}\n\nPlease ensure Firestore is initialized in your Firebase Console.`);
+      handleFirestoreError(error, OperationType.WRITE, 'resources');
+      alert(`UPLOAD FAILED!\n\nError Code: ${error.code || 'unknown'}\nMessage: ${error.message}`);
     } finally {
       setIsUploading(false);
     }
   };
 
   const handleAddNotice = async () => {
-    if (!noticeForm.title || (!noticeForm.content && !selectedFile) || (noticeForm.type === 'subject' && !noticeForm.subject)) {
+    if (!noticeForm.title || !noticeForm.content || (noticeForm.type === 'subject' && !noticeForm.subject)) {
       alert('Please fill all fields');
       return;
     }
@@ -1622,15 +1707,10 @@ const AppContent: React.FC = () => {
         await signInAnonymously(auth);
       }
 
-      let fileData = null;
-      if (selectedFile) {
-        fileData = await uploadFile(selectedFile, 'notices');
-      }
-
       await addDoc(collection(db, 'notices'), {
         ...noticeForm,
-        fileUrl: fileData?.url || '',
-        fileName: fileData?.name || '',
+        fileUrl: '',
+        fileName: '',
         authorId: currentUser?.uid,
         authorName: currentUser?.name,
         createdAt: serverTimestamp()
@@ -1662,25 +1742,38 @@ const AppContent: React.FC = () => {
   const handleAiAsk = async (type: 'chat' | 'plan' | 'test' | 'evaluate', input: string) => {
     if (!input.trim() && type === 'chat') return;
     
-    const apiKey = process.env.GEMINI_API_KEY;
+    // Support both process.env (AI Studio) and import.meta.env (Vite/Netlify)
+    const apiKey = process.env.GEMINI_API_KEY || (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY);
+    
     if (!apiKey) {
-      alert("AI Service is currently unavailable. (API_KEY_MISSING)");
+      alert("AI Service is currently unavailable. Please ensure GEMINI_API_KEY (or VITE_GEMINI_API_KEY for Netlify) is set in your environment variables.");
       return;
     }
 
     setIsAiLoading(true);
     try {
       const genAI = new GoogleGenAI({ apiKey });
+      const studentContext = currentUser?.role === 'student' ? `Student Name: ${currentUser.name}, Class: ${currentUser.class}. ` : '';
+      
       const model = genAI.models.generateContent({
         model: "gemini-3-flash-preview",
         config: {
           systemInstruction: `You are Shiksha AI, an expert NCERT educational assistant. 
-          Your goal is to help students excel in their studies.
-          - For 'chat': Answer academic questions clearly using NCERT context.
-          - For 'plan': Generate a structured 7-day study plan based on the topic/subject.
-          - For 'test': Create a 5-question MCQ test. Return ONLY a JSON object: {"title": "...", "questions": [{"id": 1, "question": "...", "options": ["A", "B", "C", "D"], "correct": "A"}]}.
-          - For 'evaluate': Compare student answers with correct ones and provide a score and feedback. Return ONLY a JSON object: {"score": "X/5", "feedback": "..."}.
-          Keep responses encouraging and professional.`,
+          Your goal is to help students excel in their studies. ${studentContext}
+          - For 'chat': Answer academic questions clearly using NCERT context. Address the student by name if known.
+          - For 'plan': Generate a structured 7-day study plan based on the topic/subject. Format it as a Markdown table with columns: Day, Topic, Key Concepts, and Practice Tasks.
+          - For 'test': Create a difficult test for the given topic. The test MUST include:
+            1. 5 Multiple Choice Questions (MCQs) - 1 mark each.
+            2. 6 Short Answer Questions - 2 marks each.
+            3. 1 Long Answer Question - 3 marks.
+            Return ONLY a JSON object: {
+              "title": "Difficult Test: [Topic]",
+              "mcqs": [{"id": 1, "question": "...", "options": ["A", "B", "C", "D"], "correct": "A"}],
+              "shortQuestions": [{"id": 1, "question": "...", "marks": 2}],
+              "longQuestion": {"question": "...", "marks": 3}
+            }.
+          - For 'evaluate': Compare student answers with correct ones and provide a score and feedback. Return ONLY a JSON object: {"score": "X/20", "feedback": "..."}.
+          Keep responses encouraging, professional, and difficult for tests.`,
         },
         contents: type === 'chat' 
           ? [...chatMessages.map(m => ({ role: m.role, parts: [{ text: m.text }] })), { role: 'user', parts: [{ text: input }] }]
@@ -1698,12 +1791,25 @@ const AppContent: React.FC = () => {
       } else if (type === 'test') {
         try {
           const cleanedJson = text.replace(/```json|```/g, '').trim();
-          setCurrentTest(JSON.parse(cleanedJson));
+          const parsedTest = JSON.parse(cleanedJson);
+          setCurrentTest(parsedTest);
           setTestAnswers({});
           setTestResult(null);
         } catch (e) {
           console.error("Failed to parse test JSON:", e);
-          alert("Failed to generate test. Please try again.");
+          // Fallback: try to find JSON block manually if regex fails
+          const jsonMatch = text.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            try {
+              setCurrentTest(JSON.parse(jsonMatch[0]));
+              setTestAnswers({});
+              setTestResult(null);
+            } catch (innerE) {
+              alert("Failed to generate test. Shiksha AI returned an invalid format. Please try again.");
+            }
+          } else {
+            alert("Failed to generate test. Shiksha AI returned an invalid format. Please try again.");
+          }
         }
       } else if (type === 'evaluate') {
         try {
@@ -1711,12 +1817,22 @@ const AppContent: React.FC = () => {
           setTestResult(JSON.parse(cleanedJson));
         } catch (e) {
           console.error("Failed to parse evaluation JSON:", e);
-          alert("Failed to evaluate test. Please try again.");
+          const jsonMatch = text.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            try {
+              setTestResult(JSON.parse(jsonMatch[0]));
+            } catch (innerE) {
+              alert("Failed to evaluate test. Shiksha AI returned an invalid format. Please try again.");
+            }
+          } else {
+            alert("Failed to evaluate test. Shiksha AI returned an invalid format. Please try again.");
+          }
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("AI Error:", error);
-      alert("Something went wrong with Shiksha AI. Please try again.");
+      const errorMessage = error.message || "Unknown error";
+      alert(`Shiksha AI Error: ${errorMessage}\n\nIf you are on Netlify, make sure you have added VITE_GEMINI_API_KEY to your Environment Variables.`);
     } finally {
       setIsAiLoading(false);
     }
@@ -2213,17 +2329,17 @@ const AiHelperModal = ({
   </motion.div>
 );
 
-const StudyPlanView = ({ aiPlan, handleAiAsk, isAiLoading }: { aiPlan: string | null, handleAiAsk: (t: 'plan', i: string) => Promise<void>, isAiLoading: boolean }) => {
+const StudyPlanView = ({ aiPlan, handleAiAsk, isAiLoading, downloadPdf }: { aiPlan: string | null, handleAiAsk: (t: 'plan', i: string) => Promise<void>, isAiLoading: boolean, downloadPdf: (id: string, name: string) => Promise<void> }) => {
   const [topic, setTopic] = useState('');
   return (
     <div className="space-y-6">
       <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-white/10">
-        <h3 className="font-orbitron font-black text-white text-lg sm:text-xl uppercase tracking-tighter mb-4">AI Study Planner</h3>
+        <h3 className="font-orbitron font-black text-white text-lg sm:text-xl uppercase tracking-tighter mb-4">Neural Study Architect</h3>
         <div className="flex flex-col sm:flex-row gap-4">
           <input 
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
-            placeholder="Enter topic or subject (e.g., Class 10 Physics Electricity)"
+            placeholder="Enter topic or subject (e.g., Quantum Physics)..."
             className="flex-1 bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white font-rajdhani focus:outline-none focus:border-cyber-blue"
           />
           <button 
@@ -2243,7 +2359,17 @@ const StudyPlanView = ({ aiPlan, handleAiAsk, isAiLoading }: { aiPlan: string | 
           animate={{ opacity: 1, y: 0 }}
           className="glass-panel p-6 sm:p-8 rounded-3xl border border-cyber-blue/20"
         >
-          <div className="prose prose-invert max-w-none font-rajdhani text-lg leading-relaxed">
+          <div className="flex justify-between items-center mb-6">
+            <h4 className="text-lg sm:text-xl font-orbitron font-black text-cyber-blue tracking-tighter uppercase">Your Neural Roadmap</h4>
+            <button 
+              onClick={() => downloadPdf('study-plan-content', 'Shiksha-AI-Study-Plan')}
+              className="flex items-center gap-2 px-4 py-2 bg-white/5 text-white/60 rounded-xl font-orbitron font-bold text-[10px] uppercase tracking-widest hover:text-white hover:bg-white/10 transition-all border border-white/10"
+            >
+              <Download className="w-4 h-4" />
+              Download PDF
+            </button>
+          </div>
+          <div id="study-plan-content" className="markdown-body p-4 bg-slate-900/50 rounded-2xl border border-white/5 overflow-x-auto">
             <ReactMarkdown>{aiPlan}</ReactMarkdown>
           </div>
         </motion.div>
@@ -2253,96 +2379,139 @@ const StudyPlanView = ({ aiPlan, handleAiAsk, isAiLoading }: { aiPlan: string | 
 };
 
 const TestGeneratorView = ({ 
-  currentTest, handleAiAsk, isAiLoading, testAnswers, setTestAnswers, testResult, setTestResult 
+  currentTest, handleAiAsk, isAiLoading, testAnswers, setTestAnswers, testResult, setTestResult, downloadPdf 
 }: { 
-  currentTest: any, handleAiAsk: any, isAiLoading: boolean, testAnswers: any, setTestAnswers: any, testResult: any, setTestResult: any 
+  currentTest: any, handleAiAsk: any, isAiLoading: boolean, testAnswers: any, setTestAnswers: any, testResult: any, setTestResult: any, downloadPdf: (id: string, name: string) => Promise<void>
 }) => {
   const [topic, setTopic] = useState('');
   
   const handleSubmitTest = () => {
-    const input = `Evaluate these answers for the test "${currentTest.title}": ${JSON.stringify(testAnswers)}. Correct answers were: ${JSON.stringify(currentTest.questions.map((q: any) => ({id: q.id, correct: q.correct})))}`;
+    const input = JSON.stringify({
+      test: currentTest,
+      answers: testAnswers
+    });
     handleAiAsk('evaluate', input);
   };
 
   return (
     <div className="space-y-6">
       <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-white/10">
-        <h3 className="font-orbitron font-black text-white text-lg sm:text-xl uppercase tracking-tighter mb-4">AI Test Generator</h3>
+        <h3 className="font-orbitron font-black text-white text-lg sm:text-xl uppercase tracking-tighter mb-4">Neural Assessment Hub</h3>
         <div className="flex flex-col sm:flex-row gap-4">
           <input 
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
-            placeholder="Topic for test (e.g., Periodic Table)"
-            className="flex-1 bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white font-rajdhani focus:outline-none focus:border-cyber-blue"
+            placeholder="Topic for difficult test (e.g., Periodic Table)"
+            className="flex-1 bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white font-rajdhani focus:outline-none focus:border-cyber-pink"
           />
           <button 
             onClick={() => handleAiAsk('test', topic)}
             disabled={isAiLoading || !topic.trim()}
-            className="cyber-button bg-amber-500 text-black font-orbitron font-bold py-3 px-8 rounded-xl disabled:opacity-50 flex items-center justify-center gap-2"
+            className="cyber-button bg-cyber-pink text-white font-orbitron font-bold py-3 px-8 rounded-xl disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {isAiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-            Create Test
+            Initiate Test
           </button>
         </div>
       </div>
 
-      {currentTest && !testResult && (
+      {currentTest && (
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="glass-panel p-6 sm:p-8 rounded-3xl border border-white/10 space-y-8"
         >
-          <h4 className="font-orbitron font-black text-cyber-blue text-xl uppercase tracking-tighter">{currentTest.title}</h4>
-          <div className="space-y-8">
-            {currentTest.questions.map((q: any, idx: number) => (
-              <div key={q.id} className="space-y-4">
-                <p className="text-white font-rajdhani text-lg font-bold">{idx + 1}. {q.question}</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {q.options.map((opt: string) => (
-                    <button
-                      key={opt}
-                      onClick={() => setTestAnswers({ ...testAnswers, [q.id]: opt })}
-                      className={`p-4 rounded-xl border font-rajdhani text-left transition-all ${
-                        testAnswers[q.id] === opt 
-                          ? 'bg-cyber-blue/20 border-cyber-blue text-cyber-blue' 
-                          : 'bg-white/5 border-white/10 text-white/60 hover:border-white/20'
-                      }`}
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
+          <div className="flex justify-between items-center mb-8">
+            <h4 className="font-orbitron font-black text-cyber-pink text-xl uppercase tracking-tighter">{currentTest.title}</h4>
+            <button 
+              onClick={() => downloadPdf('test-content', 'Shiksha-AI-Difficult-Test')}
+              className="flex items-center gap-2 px-4 py-2 bg-white/5 text-white/60 rounded-xl font-orbitron font-bold text-[10px] uppercase tracking-widest hover:text-white hover:bg-white/10 transition-all border border-white/10"
+            >
+              <Download className="w-4 h-4" />
+              Download PDF
+            </button>
           </div>
-          <button 
-            onClick={handleSubmitTest}
-            disabled={isAiLoading || Object.keys(testAnswers).length < currentTest.questions.length}
-            className="w-full cyber-button bg-cyber-blue text-black font-orbitron font-black py-4 rounded-xl disabled:opacity-50 uppercase tracking-widest"
-          >
-            {isAiLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Submit Test for Evaluation'}
-          </button>
-        </motion.div>
-      )}
 
-      {testResult && (
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="glass-panel p-8 rounded-3xl border-2 border-cyber-blue text-center space-y-6"
-        >
-          <div className="inline-block p-6 rounded-full bg-cyber-blue/20 border border-cyber-blue mb-4">
-            <TrendingUp className="w-12 h-12 text-cyber-blue" />
+          <div id="test-content" className="space-y-8 p-4 bg-slate-900/50 rounded-2xl border border-white/5">
+            {/* MCQs Section */}
+            <div className="space-y-6">
+              <h5 className="text-sm font-orbitron font-bold text-white/50 uppercase tracking-widest border-b border-white/10 pb-2">Section A: MCQs (1 Mark Each)</h5>
+              {currentTest.mcqs?.map((q: any) => (
+                <div key={q.id} className="space-y-3">
+                  <p className="text-white font-rajdhani text-lg">{q.id}. {q.question}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {q.options.map((opt: string) => (
+                      <button 
+                        key={opt}
+                        onClick={() => setTestAnswers({ ...testAnswers, [`mcq_${q.id}`]: opt })}
+                        className={`px-4 py-2 rounded-xl border font-rajdhani text-left transition-all ${testAnswers[`mcq_${q.id}`] === opt ? 'bg-cyber-pink/20 border-cyber-pink text-white' : 'bg-white/5 border-white/10 text-white/60 hover:border-white/30'}`}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Short Questions Section */}
+            <div className="space-y-6">
+              <h5 className="text-sm font-orbitron font-bold text-white/50 uppercase tracking-widest border-b border-white/10 pb-2">Section B: Short Answer (2 Marks Each)</h5>
+              {currentTest.shortQuestions?.map((q: any) => (
+                <div key={q.id} className="space-y-3">
+                  <p className="text-white font-rajdhani text-lg">{q.id}. {q.question}</p>
+                  <textarea 
+                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl outline-none text-white font-rajdhani focus:border-cyber-pink/50 transition-all h-24"
+                    placeholder="Type your answer here..."
+                    value={testAnswers[`short_${q.id}`] || ''}
+                    onChange={(e) => setTestAnswers({ ...testAnswers, [`short_${q.id}`]: e.target.value })}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Long Question Section */}
+            <div className="space-y-6">
+              <h5 className="text-sm font-orbitron font-bold text-white/50 uppercase tracking-widest border-b border-white/10 pb-2">Section C: Long Answer (3 Marks)</h5>
+              <div className="space-y-3">
+                <p className="text-white font-rajdhani text-lg">{currentTest.longQuestion?.question}</p>
+                <textarea 
+                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl outline-none text-white font-rajdhani focus:border-cyber-pink/50 transition-all h-40"
+                  placeholder="Type your detailed answer here..."
+                  value={testAnswers.long || ''}
+                  onChange={(e) => setTestAnswers({ ...testAnswers, long: e.target.value })}
+                />
+              </div>
+            </div>
           </div>
-          <h4 className="font-orbitron font-black text-white text-3xl uppercase tracking-tighter">Test Result</h4>
-          <div className="text-6xl font-orbitron font-black text-cyber-blue neon-text">{testResult.score}</div>
-          <p className="text-white/80 font-rajdhani text-xl max-w-md mx-auto leading-relaxed">{testResult.feedback}</p>
-          <button 
-            onClick={() => { setCurrentTest(null); setTestResult(null); }}
-            className="px-8 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-orbitron font-bold transition-all uppercase tracking-widest text-sm"
-          >
-            Take Another Test
-          </button>
+
+          {!testResult ? (
+            <button 
+              onClick={handleSubmitTest}
+              disabled={isAiLoading}
+              className="w-full cyber-button bg-cyber-pink text-white font-orbitron font-black py-4 rounded-xl shadow-[0_0_20px_rgba(255,0,255,0.3)] hover:bg-white hover:text-black transition-all disabled:opacity-50 uppercase tracking-tighter"
+            >
+              {isAiLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Submit for Neural Evaluation'}
+            </button>
+          ) : (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="p-6 sm:p-8 bg-cyber-pink/10 border border-cyber-pink/30 rounded-3xl"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h5 className="text-xl font-orbitron font-black text-cyber-pink uppercase tracking-tighter">Evaluation Result</h5>
+                <span className="text-3xl font-orbitron font-black text-white">{testResult.score}</span>
+              </div>
+              <p className="text-white/80 font-rajdhani text-lg leading-relaxed">{testResult.feedback}</p>
+              <button 
+                onClick={() => { setTestResult(null); setTestAnswers({}); }}
+                className="mt-6 text-cyber-pink font-orbitron font-bold text-xs uppercase tracking-widest hover:underline"
+              >
+                Retake Another Test
+              </button>
+            </motion.div>
+          )}
         </motion.div>
       )}
     </div>
@@ -2426,7 +2595,7 @@ const StudentDashboard = ({
 
           <div className="mt-8">
             {activeTab === 'ai-plan' ? (
-              <StudyPlanView aiPlan={aiPlan} handleAiAsk={handleAiAsk} isAiLoading={isAiLoading} />
+              <StudyPlanView aiPlan={aiPlan} handleAiAsk={handleAiAsk} isAiLoading={isAiLoading} downloadPdf={downloadPdf} />
             ) : (
               <TestGeneratorView 
                 currentTest={currentTest} 
@@ -2436,6 +2605,7 @@ const StudentDashboard = ({
                 setTestAnswers={setTestAnswers}
                 testResult={testResult}
                 setTestResult={setTestResult}
+                downloadPdf={downloadPdf}
               />
             )}
           </div>

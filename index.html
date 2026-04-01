@@ -117,6 +117,42 @@
       .custom-scrollbar::-webkit-scrollbar-thumb:hover {
         background: rgba(0, 243, 255, 0.4);
       }
+
+      /* Markdown Table Styling */
+      .markdown-body table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 1.5rem;
+        font-size: 0.875rem;
+      }
+      @media (min-width: 640px) {
+        .markdown-body table {
+          font-size: 1rem;
+        }
+      }
+      .markdown-body th {
+        background: rgba(0, 243, 255, 0.2);
+        color: #00f3ff;
+        font-family: 'Orbitron', sans-serif;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        padding: 0.75rem;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        text-align: left;
+      }
+      .markdown-body td {
+        padding: 0.75rem;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        font-family: 'Rajdhani', sans-serif;
+        color: rgba(255, 255, 255, 0.8);
+      }
+      .markdown-body tr:nth-child(even) {
+        background: rgba(255, 255, 255, 0.05);
+      }
+      .markdown-body tr:hover {
+        background: rgba(0, 243, 255, 0.05);
+      }
     </style>
   </head>
   <body>
