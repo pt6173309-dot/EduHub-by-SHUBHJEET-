@@ -1095,19 +1095,31 @@ const MainAdminDashboard = ({
 
     {activeTab === 'users' ? (
       <div className="space-y-6">
-        <div className="flex gap-2 sm:gap-4 p-1 bg-white/5 rounded-2xl border border-white/10 w-fit">
-          <button 
-            onClick={() => setAdminUserTab('students')}
-            className={`px-6 py-2 rounded-xl font-orbitron font-bold transition-all text-[10px] sm:text-xs uppercase tracking-wider ${adminUserTab === 'students' ? 'bg-cyber-blue text-black shadow-[0_0_10px_rgba(0,243,255,0.3)]' : 'text-white/40 hover:text-white/60'}`}
-          >
-            Students
-          </button>
-          <button 
-            onClick={() => setAdminUserTab('teachers')}
-            className={`px-6 py-2 rounded-xl font-orbitron font-bold transition-all text-[10px] sm:text-xs uppercase tracking-wider ${adminUserTab === 'teachers' ? 'bg-cyber-purple text-white shadow-[0_0_10px_rgba(157,0,255,0.3)]' : 'text-white/40 hover:text-white/60'}`}
-          >
-            Teachers
-          </button>
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex gap-2 sm:gap-4 p-1 bg-white/5 rounded-2xl border border-white/10 w-fit">
+            <button 
+              onClick={() => setAdminUserTab('students')}
+              className={`px-6 py-2 rounded-xl font-orbitron font-bold transition-all text-[10px] sm:text-xs uppercase tracking-wider ${adminUserTab === 'students' ? 'bg-cyber-blue text-black shadow-[0_0_10px_rgba(0,243,255,0.3)]' : 'text-white/40 hover:text-white/60'}`}
+            >
+              Students
+            </button>
+            <button 
+              onClick={() => setAdminUserTab('teachers')}
+              className={`px-6 py-2 rounded-xl font-orbitron font-bold transition-all text-[10px] sm:text-xs uppercase tracking-wider ${adminUserTab === 'teachers' ? 'bg-cyber-purple text-white shadow-[0_0_10px_rgba(157,0,255,0.3)]' : 'text-white/40 hover:text-white/60'}`}
+            >
+              Teachers
+            </button>
+          </div>
+          
+          {adminUserTab === 'students' && (
+            <button 
+              onClick={handlePromoteAllStudents}
+              className="cyber-button bg-amber-500 text-black font-orbitron font-bold py-2.5 px-6 rounded-xl text-[10px] sm:text-xs uppercase tracking-widest flex items-center gap-2"
+            >
+              <TrendingUp className="w-4 h-4" />
+              Promote All Students (April 1st)
+            </button>
+          )}
         </div>
         <div className="glass-panel rounded-3xl border border-white/10 overflow-hidden">
           <div className="overflow-x-auto">
@@ -1454,25 +1466,80 @@ const AppContent: React.FC = () => {
   // --- Auth Handlers ---
   const downloadPdf = async (elementId: string, filename: string) => {
     const element = document.getElementById(elementId);
-    if (!element) return;
+    if (!element) {
+      alert('Content element not found. Please try again.');
+      return;
+    }
 
     try {
+      // Show loading state or something?
       const canvas = await html2canvas(element, {
-        scale: 2,
+        scale: 1.5, // Reduced scale for better performance and smaller file size
         useCORS: true,
-        backgroundColor: '#020617' // slate-950
+        backgroundColor: '#020617',
+        logging: false,
+        onclone: (clonedDoc) => {
+          const clonedElement = clonedDoc.getElementById(elementId);
+          if (clonedElement) {
+            clonedElement.style.padding = '20px';
+            clonedElement.style.color = '#ffffff';
+          }
+        }
       });
+      
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
-      const imgProps = pdf.getImageProperties(imgData);
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      const pdfHeight = pdf.internal.pageSize.getHeight();
       
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      const imgProps = pdf.getImageProperties(imgData);
+      const imgWidth = pdfWidth - 20; // Margin
+      const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+      
+      let heightLeft = imgHeight;
+      let position = 10; // Top margin
+
+      pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+      heightLeft -= pdfHeight;
+
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+        heightLeft -= pdfHeight;
+      }
+
       pdf.save(`${filename}.pdf`);
-    } catch (error) {
+    } catch (error: any) {
       console.error('PDF generation error:', error);
-      alert('Failed to generate PDF. Please try again.');
+      alert(`Failed to generate PDF: ${error.message || 'Unknown error'}. Try using a different browser or checking your internet connection.`);
+    }
+  };
+
+  const handlePromoteAllStudents = async () => {
+    if (!window.confirm('Are you sure you want to promote ALL students to the next class? This action cannot be undone.')) return;
+    
+    setIsUploading(true);
+    let count = 0;
+    try {
+      const students = allUsers.filter(u => u.role === 'student');
+      for (const student of students) {
+        const classNum = parseInt(student.class?.replace('Class ', '') || '0');
+        if (classNum > 0 && classNum < 12) {
+          const nextClass = `Class ${classNum + 1}`;
+          await setDoc(doc(db, 'users', student.uid), {
+            class: nextClass,
+            lastPromotionDate: serverTimestamp()
+          }, { merge: true });
+          count++;
+        }
+      }
+      alert(`Successfully promoted ${count} students!`);
+    } catch (error: any) {
+      console.error('Batch promotion error:', error);
+      alert(`Failed to promote some students: ${error.message}`);
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -1490,18 +1557,10 @@ const AppContent: React.FC = () => {
     setIsUploading(true);
     try {
       // Ensure we are authenticated anonymously before any Firestore operation
-      try {
-        if (!auth.currentUser) {
-          console.log('Not authenticated. Signing in anonymously...');
-          await signInAnonymously(auth);
-          console.log('Anonymous sign-in successful');
-        }
-      } catch (authErr: any) {
-        console.error('Anonymous auth failed during signup:', authErr);
-        alert(`Authentication failed: ${authErr.message}. Please ensure Anonymous Auth is enabled in Firebase Console.`);
-        setIsUploading(false);
-        return;
+      if (!auth.currentUser) {
+        await signInAnonymously(auth);
       }
+      const uid = auth.currentUser!.uid;
 
       console.log('Checking if ID exists:', id);
       const q = query(
@@ -1509,24 +1568,16 @@ const AppContent: React.FC = () => {
         where(data.role === 'student' ? 'studentId' : 'teacherId', '==', id)
       );
       
-      let querySnapshot;
-      try {
-        querySnapshot = await getDocs(q);
-      } catch (err) {
-        const errInfo = handleFirestoreError(err, OperationType.GET, 'users');
-        alert(`Signup failed during check: ${errInfo.error}`);
-        return;
-      }
-      
+      const querySnapshot = await getDocs(q);
       if (!querySnapshot.empty) {
         alert('ID already exists');
+        setIsUploading(false);
         return;
       }
 
       console.log('Creating user document...');
-      const userRef = doc(collection(db, 'users'));
       const userData: UserData = {
-        uid: userRef.id,
+        uid: uid, // Use the current anonymous UID as the document ID
         name: data.name,
         role: data.role,
         studentId: data.studentId?.trim() || '',
@@ -1538,20 +1589,14 @@ const AppContent: React.FC = () => {
         createdAt: serverTimestamp()
       };
       
-      try {
-        await setDoc(userRef, { ...userData, password: data.password });
-      } catch (err) {
-        const errInfo = handleFirestoreError(err, OperationType.WRITE, `users/${userRef.id}`);
-        alert(`Signup failed during save: ${errInfo.error}`);
-        return;
-      }
+      await setDoc(doc(db, 'users', uid), { ...userData, password: data.password });
 
       console.log('Signup successful');
       alert('Signup successful! Please login.');
       setView('login');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Signup error details:', error);
-      alert('Signup failed. Check console for details.');
+      alert(`Signup failed: ${error.message || 'Check console for details'}`);
     } finally {
       setIsUploading(false);
     }
@@ -1742,11 +1787,10 @@ const AppContent: React.FC = () => {
   const handleAiAsk = async (type: 'chat' | 'plan' | 'test' | 'evaluate', input: string) => {
     if (!input.trim() && type === 'chat') return;
     
-    // Support both process.env (AI Studio) and import.meta.env (Vite/Netlify)
     const apiKey = process.env.GEMINI_API_KEY || (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY);
     
     if (!apiKey) {
-      alert("AI Service is currently unavailable. Please ensure GEMINI_API_KEY (or VITE_GEMINI_API_KEY for Netlify) is set in your environment variables.");
+      alert("AI Service is currently unavailable. Please ensure GEMINI_API_KEY is set in your environment variables.");
       return;
     }
 
@@ -1755,8 +1799,9 @@ const AppContent: React.FC = () => {
       const genAI = new GoogleGenAI({ apiKey });
       const studentContext = currentUser?.role === 'student' ? `Student Name: ${currentUser.name}, Class: ${currentUser.class}. ` : '';
       
+      // Using gemini-1.5-flash for better speed and higher free-tier quota
       const model = genAI.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-1.5-flash",
         config: {
           systemInstruction: `You are Shiksha AI, an expert NCERT educational assistant. 
           Your goal is to help students excel in their studies. ${studentContext}
@@ -1832,7 +1877,11 @@ const AppContent: React.FC = () => {
     } catch (error: any) {
       console.error("AI Error:", error);
       const errorMessage = error.message || "Unknown error";
-      alert(`Shiksha AI Error: ${errorMessage}\n\nIf you are on Netlify, make sure you have added VITE_GEMINI_API_KEY to your Environment Variables.`);
+      if (errorMessage.toLowerCase().includes('quota') || errorMessage.toLowerCase().includes('429')) {
+        alert(`Shiksha AI Quota Reached: The AI service is currently busy due to high usage. Please wait 60 seconds and try again.\n\nFor 2000+ users, ensure you are using a Gemini API key with sufficient billing limits.`);
+      } else {
+        alert(`Shiksha AI Error: ${errorMessage}\n\nIf you are on Netlify, make sure you have added VITE_GEMINI_API_KEY to your Environment Variables.`);
+      }
     } finally {
       setIsAiLoading(false);
     }

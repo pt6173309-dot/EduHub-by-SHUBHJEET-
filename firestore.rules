@@ -7,8 +7,11 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
+      // Allow read for all authenticated users (including anonymous)
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && (request.auth.uid == userId || request.auth.token.email == "pt6173309@gmail.com");
+      // Allow write for all authenticated users to support Neural ID system across sessions
+      // WARNING: This is insecure for production but necessary for this prototype's architecture
+      allow write: if isAuthenticated();
     }
 
     match /resources/{resourceId} {
