@@ -182,6 +182,7 @@ interface MainAdminDashboardProps {
   setSelectedResource: (res: Resource | null) => void;
   setEditingResource: (res: Resource | null) => void;
   setResourceForm: (form: any) => void;
+  handlePromoteAllStudents: () => Promise<void>;
 }
 
 interface DashboardViewProps {
@@ -221,6 +222,7 @@ interface DashboardViewProps {
   setTestAnswers: (answers: Record<string, string>) => void;
   testResult: any | null;
   setTestResult: (result: any | null) => void;
+  handlePromoteAllStudents: () => Promise<void>;
 }
 
 enum OperationType {
@@ -1044,7 +1046,8 @@ const MainAdminDashboard = ({
   currentUser, setCurrentUser, users, resources, notices, handleDeleteUser, 
   handleDeleteResource, handleDeleteNotice, setShowResourceForm, 
   setShowNoticeForm, activeTab, setActiveTab, adminUserTab, 
-  setAdminUserTab, setSelectedResource, setEditingResource, setResourceForm
+  setAdminUserTab, setSelectedResource, setEditingResource, setResourceForm,
+  handlePromoteAllStudents
 }: MainAdminDashboardProps) => (
   <div className="space-y-6 sm:space-y-8">
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
@@ -1799,9 +1802,9 @@ const AppContent: React.FC = () => {
       const genAI = new GoogleGenAI({ apiKey });
       const studentContext = currentUser?.role === 'student' ? `Student Name: ${currentUser.name}, Class: ${currentUser.class}. ` : '';
       
-      // Using gemini-1.5-flash for better speed and higher free-tier quota
+      // Using gemini-3-flash-preview for better speed and higher free-tier quota
       const model = genAI.models.generateContent({
-        model: "gemini-1.5-flash",
+        model: "gemini-3-flash-preview",
         config: {
           systemInstruction: `You are Shiksha AI, an expert NCERT educational assistant. 
           Your goal is to help students excel in their studies. ${studentContext}
@@ -2822,7 +2825,8 @@ const DashboardView = ({
   testAnswers,
   setTestAnswers,
   testResult,
-  setTestResult
+  setTestResult,
+  handlePromoteAllStudents
 }: DashboardViewProps) => (
   <div className="min-h-screen flex flex-col font-space relative overflow-hidden">
     <CyberBackground />
@@ -2880,6 +2884,7 @@ const DashboardView = ({
           setSelectedResource={setSelectedResource}
           setEditingResource={setEditingResource}
           setResourceForm={setResourceForm}
+          handlePromoteAllStudents={handlePromoteAllStudents}
         />
       )}
       {currentUser?.role === 'teacher' && (
@@ -2998,6 +3003,7 @@ const DashboardView = ({
               setTestAnswers={setTestAnswers}
               testResult={testResult}
               setTestResult={setTestResult}
+              handlePromoteAllStudents={handlePromoteAllStudents}
             />
           </motion.div>
         )}
