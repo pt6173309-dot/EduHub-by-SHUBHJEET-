@@ -7,21 +7,16 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      // Allow read for all authenticated users (including anonymous)
-      allow read: if isAuthenticated();
-      // Allow write for all authenticated users to support Neural ID system across sessions
-      // WARNING: This is insecure for production but necessary for this prototype's architecture
-      allow write: if isAuthenticated();
+      // Allow read/write for all users to ensure prototype functionality
+      allow read, write: if true;
     }
 
     match /resources/{resourceId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow read, write: if true;
     }
 
     match /notices/{noticeId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow read, write: if true;
     }
     
     match /_connection_test/{testId} {

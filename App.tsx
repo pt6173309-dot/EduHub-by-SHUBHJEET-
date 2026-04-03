@@ -1476,22 +1476,27 @@ const AppContent: React.FC = () => {
 
     try {
       // Show loading state or something?
-      const canvas = await html2canvas(element, {
-        scale: 1.5, // Reduced scale for better performance and smaller file size
+      // Use the imported libraries, with a fallback to window object if needed
+      const h2c = (html2canvas as any).default || html2canvas;
+      const jspdf = (jsPDF as any).default || jsPDF;
+
+      const canvas = await h2c(element, {
+        scale: 1.5,
         useCORS: true,
         backgroundColor: '#020617',
         logging: false,
-        onclone: (clonedDoc) => {
+        onclone: (clonedDoc: Document) => {
           const clonedElement = clonedDoc.getElementById(elementId);
           if (clonedElement) {
             clonedElement.style.padding = '20px';
             clonedElement.style.color = '#ffffff';
+            clonedElement.style.width = '800px';
           }
         }
       });
       
       const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdf = new jspdf('p', 'mm', 'a4');
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
       
@@ -1617,16 +1622,30 @@ const AppContent: React.FC = () => {
           await signInAnonymously(auth);
         } catch (authErr: any) {
           console.error('Anonymous auth failed:', authErr);
-          // We continue, but writes might fail if rules require auth
+          // If auth fails, we can't proceed with Firestore operations
+          alert('Authentication failed. Please check your internet connection or Firebase configuration.');
+          setIsUploading(false);
+          return;
         }
       }
 
       if (id === MAIN_ADMIN_EMAIL && pass === '91868194p') {
-        // Even for main admin, we wait for anonymous auth to ensure we have a valid token for Firestore
+        // Double check auth
         if (!auth.currentUser) {
-          await signInAnonymously(auth);
+          try {
+            await signInAnonymously(auth);
+          } catch (e) {
+            alert('Admin authentication failed. Please try again.');
+            setIsUploading(false);
+            return;
+          }
         }
-        setCurrentUser({ uid: auth.currentUser?.uid || 'main-admin', name: 'Main Admin', role: 'main-admin', email: MAIN_ADMIN_EMAIL });
+        setCurrentUser({ 
+          uid: auth.currentUser?.uid || 'main-admin', 
+          name: 'Main Admin', 
+          role: 'main-admin', 
+          email: MAIN_ADMIN_EMAIL 
+        });
         setView('dashboard');
         setIsUploading(false);
         return;
@@ -1881,7 +1900,7 @@ const AppContent: React.FC = () => {
       console.error("AI Error:", error);
       const errorMessage = error.message || "Unknown error";
       if (errorMessage.toLowerCase().includes('quota') || errorMessage.toLowerCase().includes('429')) {
-        alert(`Shiksha AI Quota Reached: The AI service is currently busy due to high usage. Please wait 60 seconds and try again.\n\nFor 2000+ users, ensure you are using a Gemini API key with sufficient billing limits.`);
+        alert(`Shiksha AI Limit Reached (Free Tier): You are using a free API key which has strict limits. For 2000+ users, please upgrade to a Paid Gemini API Key in the Google AI Studio settings. \n\nSolution: Wait 60 seconds and try again, or use a paid key for unlimited access.`);
       } else {
         alert(`Shiksha AI Error: ${errorMessage}\n\nIf you are on Netlify, make sure you have added VITE_GEMINI_API_KEY to your Environment Variables.`);
       }
