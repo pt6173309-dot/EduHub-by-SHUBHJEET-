@@ -25,8 +25,8 @@ import {
   Download,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
+import jsPDF from 'jspdf';
+import domtoimage from 'dom-to-image';
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore,
@@ -1466,7 +1466,7 @@ const AppContent: React.FC = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
-  // --- Auth Handlers ---
+  // --- PDF Download Handler ---
   const downloadPdf = async (elementId: string, filename: string) => {
     const element = document.getElementById(elementId);
     if (!element) {
@@ -1475,96 +1475,85 @@ const AppContent: React.FC = () => {
     }
 
     try {
-      // Show loading state or something?
-      // Use the imported libraries, with a fallback to window object if needed
-      const h2c = (html2canvas as any).default || html2canvas;
       const jspdf = (jsPDF as any).default || jsPDF;
+      const dti = (domtoimage as any).default || domtoimage;
 
-      const canvas = await h2c(element, {
-        scale: 1.5,
-        useCORS: true,
-        backgroundColor: '#020617',
-        logging: false,
-        onclone: (clonedDoc: Document) => {
-          // Fix for html2canvas not supporting modern CSS color functions like oklab/oklch (Tailwind 4)
-          // 1. Process all style tags and remove problematic properties or functions
-          const styleTags = Array.from(clonedDoc.getElementsByTagName('style'));
-          styleTags.forEach(tag => {
-            try {
-              if (tag.textContent) {
-                // Remove entire declarations that use oklch or oklab to prevent parser errors
-                // This regex looks for property: value; where value contains oklch or oklab
-                tag.textContent = tag.textContent
-                  .replace(/[^;{}]+:\s*(?:oklch|oklab)\s*\([^;}]+\);?/g, '')
-                  // Fallback: replace any remaining oklch/oklab occurrences with a safe color
-                  .replace(/(oklch|oklab)\s*\([^)]+\)/g, '#ffffff');
-              }
-            } catch (e) {
-              console.warn('Failed to clean style tag:', e);
-            }
-          });
-
-          // 2. Process all elements with inline styles
-          const allElements = Array.from(clonedDoc.getElementsByTagName('*'));
-          allElements.forEach(el => {
-            if (el instanceof HTMLElement) {
-              const style = el.getAttribute('style');
-              if (style && (style.includes('oklch') || style.includes('oklab'))) {
-                // Remove inline properties using oklch/oklab
-                el.setAttribute('style', style.replace(/[^;:]+:\s*(?:oklch|oklab)\s*\([^)]+\);?/g, ''));
-              }
-            }
-          });
-
-          // 3. Inject a style to override common Tailwind 4 variables that might use oklch
-          const overrideStyle = clonedDoc.createElement('style');
-          overrideStyle.textContent = `
-            :root {
-              --color-cyber-blue: #00f3ff !important;
-              --color-cyber-pink: #ff00ff !important;
-              --color-cyber-purple: #9d00ff !important;
-              --color-cyber-green: #00ff9f !important;
-            }
-            * {
-              --tw-ring-color: rgba(255, 255, 255, 0.1) !important;
-              --tw-ring-offset-color: transparent !important;
-              --tw-shadow-color: transparent !important;
-              --tw-outline-color: transparent !important;
-              border-color: rgba(255, 255, 255, 0.1) !important;
-            }
-          `;
-          clonedDoc.head.appendChild(overrideStyle);
-
-          const clonedElement = clonedDoc.getElementById(elementId);
-          if (clonedElement) {
-            clonedElement.style.padding = '20px';
-            clonedElement.style.color = '#ffffff';
-            clonedElement.style.width = '800px';
-            clonedElement.style.background = '#020617';
+      // Create a temporary container to style the element for PDF
+      const container = document.createElement('div');
+      container.style.position = 'absolute';
+      container.style.left = '-9999px';
+      container.style.top = '0';
+      container.style.width = '800px';
+      container.style.background = '#020617';
+      container.style.color = '#ffffff';
+      container.style.padding = '40px';
+      container.style.fontFamily = 'sans-serif';
+      
+      const clone = element.cloneNode(true) as HTMLElement;
+      clone.style.width = '100%';
+      clone.style.display = 'block';
+      clone.style.visibility = 'visible';
+      
+      // Clean up oklch/oklab from inline styles in the clone
+      const allElements = clone.querySelectorAll('*');
+      allElements.forEach(el => {
+        if (el instanceof HTMLElement) {
+          const style = el.getAttribute('style');
+          if (style && (style.includes('oklch') || style.includes('oklab'))) {
+            el.setAttribute('style', style.replace(/[^;:]+:\s*(?:oklch|oklab)\s*\([^)]+\);?/g, ''));
           }
         }
       });
-      
-      const imgData = canvas.toDataURL('image/png');
+
+      container.appendChild(clone);
+      document.body.appendChild(container);
+
+      // Add a style tag to the container to override variables
+      const styleTag = document.createElement('style');
+      styleTag.textContent = `
+        .markdown-body table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+        .markdown-body th, .markdown-body td { border: 1px solid rgba(255,255,255,0.2); padding: 12px; text-align: left; }
+        .markdown-body th { background: rgba(0,243,255,0.1); color: #00f3ff; }
+        * { color-scheme: dark; }
+      `;
+      container.appendChild(styleTag);
+
+      const dataUrl = await dti.toPng(container, {
+        width: 800,
+        bgcolor: '#020617',
+        style: {
+          'transform': 'none',
+          'border': 'none'
+        }
+      });
+
+      document.body.removeChild(container);
+
       const pdf = new jspdf('p', 'mm', 'a4');
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
       
-      const imgProps = pdf.getImageProperties(imgData);
-      const imgWidth = pdfWidth - 20; // Margin
-      const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+      const img = new Image();
+      img.src = dataUrl;
+      
+      await new Promise((resolve) => {
+        img.onload = resolve;
+      });
+
+      const imgWidth = pdfWidth - 20; // 10mm margin on each side
+      const imgHeight = (img.height * imgWidth) / img.width;
       
       let heightLeft = imgHeight;
-      let position = 10; // Top margin
+      let position = 10; // 10mm top margin
 
-      pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
-      heightLeft -= pdfHeight;
+      pdf.addImage(dataUrl, 'PNG', 10, position, imgWidth, imgHeight);
+      heightLeft -= (pdfHeight - 20);
 
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight + 10;
         pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
-        heightLeft -= pdfHeight;
+        pdf.addImage(dataUrl, 'PNG', 10, position, imgWidth, imgHeight);
+        heightLeft -= (pdfHeight - 20);
       }
 
       pdf.save(`${filename}.pdf`);
