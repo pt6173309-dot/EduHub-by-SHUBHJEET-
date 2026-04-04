@@ -1486,11 +1486,61 @@ const AppContent: React.FC = () => {
         backgroundColor: '#020617',
         logging: false,
         onclone: (clonedDoc: Document) => {
+          // Fix for html2canvas not supporting modern CSS color functions like oklab/oklch (Tailwind 4)
+          // 1. Process all style tags and remove problematic properties or functions
+          const styleTags = Array.from(clonedDoc.getElementsByTagName('style'));
+          styleTags.forEach(tag => {
+            try {
+              if (tag.textContent) {
+                // Remove entire declarations that use oklch or oklab to prevent parser errors
+                // This regex looks for property: value; where value contains oklch or oklab
+                tag.textContent = tag.textContent
+                  .replace(/[^;{}]+:\s*(?:oklch|oklab)\s*\([^;}]+\);?/g, '')
+                  // Fallback: replace any remaining oklch/oklab occurrences with a safe color
+                  .replace(/(oklch|oklab)\s*\([^)]+\)/g, '#ffffff');
+              }
+            } catch (e) {
+              console.warn('Failed to clean style tag:', e);
+            }
+          });
+
+          // 2. Process all elements with inline styles
+          const allElements = Array.from(clonedDoc.getElementsByTagName('*'));
+          allElements.forEach(el => {
+            if (el instanceof HTMLElement) {
+              const style = el.getAttribute('style');
+              if (style && (style.includes('oklch') || style.includes('oklab'))) {
+                // Remove inline properties using oklch/oklab
+                el.setAttribute('style', style.replace(/[^;:]+:\s*(?:oklch|oklab)\s*\([^)]+\);?/g, ''));
+              }
+            }
+          });
+
+          // 3. Inject a style to override common Tailwind 4 variables that might use oklch
+          const overrideStyle = clonedDoc.createElement('style');
+          overrideStyle.textContent = `
+            :root {
+              --color-cyber-blue: #00f3ff !important;
+              --color-cyber-pink: #ff00ff !important;
+              --color-cyber-purple: #9d00ff !important;
+              --color-cyber-green: #00ff9f !important;
+            }
+            * {
+              --tw-ring-color: rgba(255, 255, 255, 0.1) !important;
+              --tw-ring-offset-color: transparent !important;
+              --tw-shadow-color: transparent !important;
+              --tw-outline-color: transparent !important;
+              border-color: rgba(255, 255, 255, 0.1) !important;
+            }
+          `;
+          clonedDoc.head.appendChild(overrideStyle);
+
           const clonedElement = clonedDoc.getElementById(elementId);
           if (clonedElement) {
             clonedElement.style.padding = '20px';
             clonedElement.style.color = '#ffffff';
             clonedElement.style.width = '800px';
+            clonedElement.style.background = '#020617';
           }
         }
       });
