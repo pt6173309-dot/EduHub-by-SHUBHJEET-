@@ -6,16 +6,16 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    match /users/{userId} {
+    match /users/{allPaths=**} {
       // Allow read/write for all users to ensure prototype functionality
       allow read, write: if true;
     }
 
-    match /resources/{resourceId} {
+    match /resources/{allPaths=**} {
       allow read, write: if true;
     }
 
-    match /notices/{noticeId} {
+    match /notices/{allPaths=**} {
       allow read, write: if true;
     }
     

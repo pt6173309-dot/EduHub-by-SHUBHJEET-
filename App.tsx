@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import jsPDF from 'jspdf';
-import domtoimage from 'dom-to-image';
+import html2canvas from 'html2canvas';
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore,
@@ -1476,83 +1476,171 @@ const AppContent: React.FC = () => {
 
     try {
       const jspdf = (jsPDF as any).default || jsPDF;
-      const dti = (domtoimage as any).default || domtoimage;
+      const h2c = (html2canvas as any).default || html2canvas;
 
-      // Create a temporary container to style the element for PDF
-      const container = document.createElement('div');
-      container.style.position = 'absolute';
-      container.style.left = '-9999px';
-      container.style.top = '0';
-      container.style.width = '800px';
-      container.style.background = '#020617';
-      container.style.color = '#ffffff';
-      container.style.padding = '40px';
-      container.style.fontFamily = 'sans-serif';
-      
-      const clone = element.cloneNode(true) as HTMLElement;
-      clone.style.width = '100%';
-      clone.style.display = 'block';
-      clone.style.visibility = 'visible';
-      
-      // Clean up oklch/oklab from inline styles in the clone
-      const allElements = clone.querySelectorAll('*');
-      allElements.forEach(el => {
-        if (el instanceof HTMLElement) {
-          const style = el.getAttribute('style');
-          if (style && (style.includes('oklch') || style.includes('oklab'))) {
-            el.setAttribute('style', style.replace(/[^;:]+:\s*(?:oklch|oklab)\s*\([^)]+\);?/g, ''));
+      const canvas = await h2c(element, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#020617',
+        logging: false,
+        onclone: (clonedDoc: Document) => {
+          // STRATEGY: Completely remove all existing styles and inject a safe, 
+          // standard CSS block. This bypasses the html2canvas "oklab" parser error
+          // because it will never see the modern Tailwind 4 color functions.
+          
+          // 1. Remove all existing style and link tags from the cloned document
+          const styles = clonedDoc.querySelectorAll('style, link[rel="stylesheet"]');
+          styles.forEach(s => s.remove());
+
+          // 2. Inject a safe, standard CSS block
+          const safeStyle = clonedDoc.createElement('style');
+          safeStyle.textContent = `
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+            
+            :root {
+              color-scheme: dark;
+            }
+            
+            body {
+              background-color: #020617 !important;
+              color: #ffffff !important;
+              font-family: 'Inter', sans-serif !important;
+            }
+
+            #${elementId} {
+              background-color: #020617 !important;
+              color: #ffffff !important;
+              padding: 40px !important;
+              width: 800px !important;
+              margin: 0 auto !important;
+              font-family: 'Inter', sans-serif !important;
+              line-height: 1.6 !important;
+            }
+
+            .markdown-body {
+              color: #ffffff !important;
+              font-size: 16px !important;
+            }
+
+            .markdown-body h1, .markdown-body h2, .markdown-body h3 {
+              color: #00f3ff !important;
+              margin-top: 24px !important;
+              margin-bottom: 16px !important;
+              font-weight: 700 !important;
+            }
+
+            .markdown-body p { margin-bottom: 16px !important; }
+
+            .markdown-body table { 
+              border-collapse: collapse !important; 
+              width: 100% !important; 
+              margin-bottom: 24px !important;
+              border: 1px solid rgba(255,255,255,0.1) !important;
+            }
+
+            .markdown-body th, .markdown-body td { 
+              border: 1px solid rgba(255,255,255,0.1) !important; 
+              padding: 12px !important; 
+              text-align: left !important; 
+            }
+
+            .markdown-body th { 
+              background: rgba(0,243,255,0.1) !important; 
+              color: #00f3ff !important; 
+            }
+
+            .markdown-body code {
+              background: rgba(255,255,255,0.1) !important;
+              padding: 2px 4px !important;
+              border-radius: 4px !important;
+              font-family: monospace !important;
+            }
+
+            /* Handle the specific UI elements in the test view */
+            .selected-option {
+              background: rgba(0, 243, 255, 0.2) !important;
+              border: 1px solid #00f3ff !important;
+              color: #ffffff !important;
+              padding: 8px 16px !important;
+              border-radius: 8px !important;
+              display: inline-block !important;
+              margin: 4px !important;
+            }
+
+            .test-question {
+              margin-bottom: 32px !important;
+              padding-bottom: 16px !important;
+              border-bottom: 1px solid rgba(255,255,255,0.05) !important;
+            }
+
+            .test-answer-box {
+              border: 1px solid rgba(255,255,255,0.1) !important;
+              padding: 16px !important;
+              background: rgba(255,255,255,0.02) !important;
+              border-radius: 12px !important;
+              margin-top: 8px !important;
+              white-space: pre-wrap !important;
+            }
+          `;
+          clonedDoc.head.appendChild(safeStyle);
+
+          const clonedElement = clonedDoc.getElementById(elementId);
+          if (clonedElement) {
+            // Handle textareas by replacing them with styled divs
+            clonedElement.querySelectorAll('textarea').forEach(ta => {
+              const div = clonedDoc.createElement('div');
+              div.className = 'test-answer-box';
+              div.textContent = (ta as HTMLTextAreaElement).value || 'No answer provided.';
+              ta.replaceWith(div);
+            });
+
+            // Handle buttons
+            clonedElement.querySelectorAll('button').forEach(btn => {
+              if (btn.classList.contains('selected-option')) {
+                // Keep selected options but style them
+                const span = clonedDoc.createElement('span');
+                span.className = 'selected-option';
+                span.textContent = btn.textContent;
+                btn.replaceWith(span);
+              } else {
+                // Remove unselected buttons to keep PDF clean
+                btn.remove();
+              }
+            });
+
+            // Remove any other interactive elements or icons that might not render well
+            clonedElement.querySelectorAll('svg, .lucide').forEach(icon => icon.remove());
           }
         }
       });
 
-      container.appendChild(clone);
-      document.body.appendChild(container);
-
-      // Add a style tag to the container to override variables
-      const styleTag = document.createElement('style');
-      styleTag.textContent = `
-        .markdown-body table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
-        .markdown-body th, .markdown-body td { border: 1px solid rgba(255,255,255,0.2); padding: 12px; text-align: left; }
-        .markdown-body th { background: rgba(0,243,255,0.1); color: #00f3ff; }
-        * { color-scheme: dark; }
-      `;
-      container.appendChild(styleTag);
-
-      const dataUrl = await dti.toPng(container, {
-        width: 800,
-        bgcolor: '#020617',
-        style: {
-          'transform': 'none',
-          'border': 'none'
-        }
-      });
-
-      document.body.removeChild(container);
-
+      const imgData = canvas.toDataURL('image/png');
       const pdf = new jspdf('p', 'mm', 'a4');
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
       
-      const img = new Image();
-      img.src = dataUrl;
-      
-      await new Promise((resolve) => {
-        img.onload = resolve;
-      });
-
+      const imgProps = pdf.getImageProperties(imgData);
       const imgWidth = pdfWidth - 20; // 10mm margin on each side
-      const imgHeight = (img.height * imgWidth) / img.width;
+      const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
       
       let heightLeft = imgHeight;
       let position = 10; // 10mm top margin
 
-      pdf.addImage(dataUrl, 'PNG', 10, position, imgWidth, imgHeight);
+      const addPdfFooter = (p: any) => {
+        p.setFontSize(8);
+        p.setTextColor(150, 150, 150);
+        p.text('Generated By Edu-hub-india.netlify.app || Developed by SHUBHJEET RAM TRIPATHI', pdfWidth / 2, pdfHeight - 5, { align: 'center' });
+      };
+
+      addPdfFooter(pdf);
+      pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
       heightLeft -= (pdfHeight - 20);
 
       while (heightLeft > 0) {
         position = heightLeft - imgHeight + 10;
         pdf.addPage();
-        pdf.addImage(dataUrl, 'PNG', 10, position, imgWidth, imgHeight);
+        addPdfFooter(pdf);
+        pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
         heightLeft -= (pdfHeight - 20);
       }
 
@@ -2554,7 +2642,7 @@ const TestGeneratorView = ({
                       <button 
                         key={opt}
                         onClick={() => setTestAnswers({ ...testAnswers, [`mcq_${q.id}`]: opt })}
-                        className={`px-4 py-2 rounded-xl border font-rajdhani text-left transition-all ${testAnswers[`mcq_${q.id}`] === opt ? 'bg-cyber-pink/20 border-cyber-pink text-white' : 'bg-white/5 border-white/10 text-white/60 hover:border-white/30'}`}
+                        className={`px-4 py-2 rounded-xl border font-rajdhani text-left transition-all ${testAnswers[`mcq_${q.id}`] === opt ? 'bg-cyber-pink/20 border-cyber-pink text-white selected-option' : 'bg-white/5 border-white/10 text-white/60 hover:border-white/30'}`}
                       >
                         {opt}
                       </button>
@@ -3114,8 +3202,8 @@ const DashboardView = ({
       </AnimatePresence>
 
       <footer className="py-10 text-center border-t border-white/5 mt-auto">
-        <p className="text-[10px] font-orbitron font-bold text-white/20 uppercase tracking-[0.5em]">
-          Powered by Neural Learning Systems &copy; 2024
+        <p className="text-[10px] font-rajdhani font-bold text-white/40 uppercase tracking-widest">
+          © edu hub india 2026 || Designed & Developed by SHUBHJEET RAM TRIPATHI with 🩷
         </p>
       </footer>
     </div>
