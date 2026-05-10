@@ -1334,64 +1334,71 @@ const AppContent: React.FC = () => {
   // Auto-fill candidate name
   const candidateName = "PALLAVI";
 
-  const handleCuetTextUpload = async (pastedText: string) => {
-    const apiKey = process.env.GEMINI_API_KEY || (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY);
-    
-    if (!apiKey) {
-      alert("AI Service is currently unavailable. Please ensure GEMINI_API_KEY is set.");
-      return;
-    }
-
+  const handleCuetTextUpload = (pastedText: string) => {
     if (!pastedText.trim()) {
       alert("Please paste some text first.");
       return;
     }
 
-    setIsAiLoading(true);
-    try {
-      const ai = new GoogleGenAI({ apiKey });
-      const prompt = `Extract all multiple choice questions from the following text. 
-      Format each question as an object with:
-      1. question: the text of the question
-      2. options: an array of EXACTLY 4 strings
-      3. correct: the index (0-3) of the correct answer based on the content
-      
-      Text to process:
-      ${pastedText}
-      
-      Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "correct": 0}]. If no questions are found, return [].`;
+    const sections = pastedText.split(/\n\s*\n/);
+    const extractedQuestions: any[] = [];
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: [{ parts: [{ text: prompt }] }],
-      });
-      const text = response.text;
+    sections.forEach(section => {
+      const lines = section.split('\n').map(l => l.trim()).filter(l => l !== '');
+      if (lines.length < 2) return;
+
+      let questionText = '';
+      const options: string[] = [];
       
-      if (!text) {
-        alert("AI returned an empty response. Please try again.");
-        return;
-      }
-      
-      const jsonMatch = text.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        const extractedQuestions = JSON.parse(jsonMatch[0]);
-        if (extractedQuestions.length > 0) {
-          setCuetQuestions(extractedQuestions);
-          setCuetStatus('instructions');
-          setCuetAnswers({});
-          setCuetStatusMap({});
-          setCuetTimeLeft(3600);
+      lines.forEach(line => {
+        const optMatch = line.match(/^([A-Da-d][\.\)]|[A-D]:|\([A-Da-d]\))/);
+        if (optMatch) {
+          options.push(line.replace(optMatch[0], '').trim());
         } else {
-          alert("AI couldn't find any questions in the text provided. Please check the format.");
+          if (options.length === 0) {
+            questionText += (questionText ? '\n' : '') + line;
+          }
         }
-      } else {
-        alert("Found issue parsing AI response. Please try again.");
+      });
+
+      if (questionText && options.length >= 2) {
+        extractedQuestions.push({
+          question: questionText,
+          options: options.slice(0, 4),
+          correct: 0 // Default to first for manual mode
+        });
       }
-    } catch (error: any) {
-      console.error('CUET Text Extraction Error:', error);
-      alert('Failed to process text: ' + (error.message || 'Unknown error'));
-    } finally {
-      setIsAiLoading(false);
+    });
+
+    if (extractedQuestions.length === 0) {
+      // Fallback for non-spaced questions
+      const allLines = pastedText.split('\n').filter(l => l.trim() !== '');
+      let q: any = null;
+      allLines.forEach(line => {
+        const trimmed = line.trim();
+        const qMatch = trimmed.match(/^(\d+[\.\)]|Q\d+|Question\s*\d+)/i);
+        const oMatch = trimmed.match(/^([A-Da-d][\.\)]|[A-D]:|\([A-Da-d]\))/);
+        
+        if (qMatch) {
+          if (q && q.options.length >= 2) extractedQuestions.push(q);
+          q = { question: trimmed.replace(qMatch[0], '').trim(), options: [], correct: 0 };
+        } else if (oMatch && q) {
+          q.options.push(trimmed.replace(oMatch[0], '').trim());
+        } else if (q) {
+          if (q.options.length === 0) q.question += '\n' + trimmed;
+        }
+      });
+      if (q && q.options.length >= 2) extractedQuestions.push(q);
+    }
+
+    if (extractedQuestions.length > 0) {
+      setCuetQuestions(extractedQuestions);
+      setCuetStatus('instructions');
+      setCuetAnswers({});
+      setCuetStatusMap({});
+      setCuetTimeLeft(3600);
+    } else {
+      alert("No questions detected. Use format:\n\n1. Question text?\nA) Opt 1\nB) Opt 2...");
     }
   };
 
@@ -1465,27 +1472,36 @@ const AppContent: React.FC = () => {
 
   // We force the app into the CUET flow directly as requested
   return (
-    <div className="min-h-screen bg-slate-950 font-sans">
-      <CUETExamView 
-        currentUser={{ name: candidateName }}
-        cuetStatus={cuetStatus}
-        setCuetStatus={setCuetStatus}
-        cuetQuestions={cuetQuestions}
-        setCuetQuestions={setCuetQuestions}
-        cuetAnswers={cuetAnswers}
-        setCuetAnswers={setCuetAnswers}
-        cuetTimeLeft={cuetTimeLeft}
-        setCuetTimeLeft={setCuetTimeLeft}
-        cuetIsLocked={cuetIsLocked}
-        setCuetIsLocked={setCuetIsLocked}
-        cuetResult={cuetResult}
-        setCuetResult={setCuetResult}
-        handleCuetImageUpload={handleCuetImageUpload}
-        handleCuetTextUpload={handleCuetTextUpload}
-        isAiLoading={isAiLoading}
-        cuetStatusMap={cuetStatusMap}
-        setCuetStatusMap={setCuetStatusMap}
-      />
+    <div className="min-h-screen bg-slate-950 font-sans flex flex-col">
+      <div className="flex-1">
+        <CUETExamView 
+          currentUser={{ name: candidateName }}
+          cuetStatus={cuetStatus}
+          setCuetStatus={setCuetStatus}
+          cuetQuestions={cuetQuestions}
+          setCuetQuestions={setCuetQuestions}
+          cuetAnswers={cuetAnswers}
+          setCuetAnswers={setCuetAnswers}
+          cuetTimeLeft={cuetTimeLeft}
+          setCuetTimeLeft={setCuetTimeLeft}
+          cuetIsLocked={cuetIsLocked}
+          setCuetIsLocked={setCuetIsLocked}
+          cuetResult={cuetResult}
+          setCuetResult={setCuetResult}
+          handleCuetImageUpload={handleCuetImageUpload}
+          handleCuetTextUpload={handleCuetTextUpload}
+          isAiLoading={isAiLoading}
+          cuetStatusMap={cuetStatusMap}
+          setCuetStatusMap={setCuetStatusMap}
+        />
+      </div>
+      <footer className="py-8 border-t border-slate-900">
+        <div className="max-w-7xl mx-auto px-6 text-center">
+          <p className="text-slate-500 font-bold text-[10px] uppercase tracking-[0.2em] leading-relaxed">
+            © edu hub india 2026 || Designed & Developed by SHUBHJEET RAM TRIPATHI with 🩷
+          </p>
+        </div>
+      </footer>
     </div>
   );
 };
@@ -1626,31 +1642,22 @@ const CUETExamView = ({
             <textarea 
               value={pastedText}
               onChange={(e) => setPastedText(e.target.value)}
-              placeholder="Question 1: What is the capital of India?&#10;A) Mumbai&#10;B) New Delhi&#10;C) Kolkata&#10;D) Chennai..."
+              placeholder="1. Question text here...&#10;A) Option 1&#10;B) Option 2&#10;C) Option 3&#10;D) Option 4..."
               className="w-full h-64 p-6 bg-slate-50 border border-slate-200 rounded-3xl outline-none focus:border-blue-500 transition-all font-mono text-sm leading-relaxed"
             />
           </div>
           
           <button 
             onClick={() => handleCuetTextUpload(pastedText)}
-            disabled={isAiLoading || !pastedText.trim()}
+            disabled={!pastedText.trim()}
             className="w-full bg-blue-600 text-white font-black py-5 rounded-2xl uppercase tracking-tighter text-xl shadow-xl hover:bg-blue-700 active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-50"
           >
-            {isAiLoading ? (
-              <>
-                <Loader2 className="w-6 h-6 animate-spin" />
-                NEURAL ANALYSIS IN PROGRESS...
-              </>
-            ) : (
-              <>
-                <Zap className="w-6 h-6" />
-                GENERATE PRACTICE EXAM
-              </>
-            )}
+            <Zap className="w-6 h-6" />
+            START SIMULATION
           </button>
           
           <div className="text-center">
-            <p className="text-slate-400 text-[10px] font-bold uppercase">AI will automatically identify questions, options, and answers</p>
+            <p className="text-slate-400 text-[10px] font-bold uppercase">Manual text parsing mode active (Instant)</p>
           </div>
         </div>
         <div className="bg-amber-50 p-8 rounded-3xl border border-amber-100 space-y-3">
@@ -1775,7 +1782,7 @@ const CUETExamView = ({
             </div>
             
             <div className="flex-1 p-10 overflow-y-auto">
-              <div className="text-lg font-bold text-slate-800 leading-relaxed mb-12 select-none">{currentQ?.question}</div>
+              <div className="text-lg font-bold text-slate-800 leading-relaxed mb-12 select-none whitespace-pre-wrap">{currentQ?.question}</div>
               <div className="grid grid-cols-1 gap-5">
                 {currentQ?.options.map((opt: string, i: number) => (
                   <button 
