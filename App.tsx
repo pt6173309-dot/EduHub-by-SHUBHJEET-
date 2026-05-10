@@ -23,6 +23,14 @@ import {
   Loader2,
   AlertCircle,
   Download,
+  Monitor,
+  RefreshCw,
+  AlertTriangle,
+  Zap,
+  Smartphone,
+  Info,
+  Clock,
+  CheckCircle2,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import jsPDF from 'jspdf';
@@ -145,8 +153,8 @@ interface StudentDashboardProps {
   setCurrentUser: (user: UserData | null) => void;
   resources: Resource[];
   notices: Notice[];
-  studentView: 'main' | 'school' | 'self-study';
-  setStudentView: (view: 'main' | 'school' | 'self-study') => void;
+  studentView: 'main' | 'school' | 'self-study' | 'cuet-practice';
+  setStudentView: (view: 'main' | 'school' | 'self-study' | 'cuet-practice') => void;
   activeTab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users' | 'ai-plan' | 'ai-test';
   setActiveTab: (tab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users' | 'ai-plan' | 'ai-test') => void;
   selectedSubjectFilter: string | null;
@@ -162,6 +170,19 @@ interface StudentDashboardProps {
   setTestAnswers: (answers: Record<string, string>) => void;
   testResult: any | null;
   setTestResult: (result: any | null) => void;
+  cuetStatus: 'upload' | 'instructions' | 'exam' | 'terminated' | 'finished';
+  setCuetStatus: (status: 'upload' | 'instructions' | 'exam' | 'terminated' | 'finished') => void;
+  cuetQuestions: any[];
+  setCuetQuestions: (qs: any[]) => void;
+  cuetAnswers: Record<number, string>;
+  setCuetAnswers: (as: Record<number, string>) => void;
+  cuetTimeLeft: number;
+  setCuetTimeLeft: (t: number | ((prev: number) => number)) => void;
+  cuetIsLocked: boolean;
+  setCuetIsLocked: (l: boolean) => void;
+  cuetResult: any;
+  setCuetResult: (r: any) => void;
+  handleCuetImageUpload: (file: File) => Promise<void>;
 }
 
 interface MainAdminDashboardProps {
@@ -199,8 +220,8 @@ interface DashboardViewProps {
   handleDeleteUser: (id: string) => void;
   handleDeleteResource: (id: string) => void;
   handleDeleteNotice: (id: string) => void;
-  studentView: 'main' | 'school' | 'self-study';
-  setStudentView: (view: 'main' | 'school' | 'self-study') => void;
+  studentView: 'main' | 'school' | 'self-study' | 'cuet-practice';
+  setStudentView: (view: 'main' | 'school' | 'self-study' | 'cuet-practice') => void;
   activeTab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users' | 'ai-plan' | 'ai-test';
   setActiveTab: (tab: 'video' | 'note' | 'question' | 'notice' | 'profile' | 'users' | 'ai-plan' | 'ai-test') => void;
   selectedSubjectFilter: string | null;
@@ -223,6 +244,19 @@ interface DashboardViewProps {
   testResult: any | null;
   setTestResult: (result: any | null) => void;
   handlePromoteAllStudents: () => Promise<void>;
+  cuetStatus: 'upload' | 'instructions' | 'exam' | 'terminated' | 'finished';
+  setCuetStatus: (status: 'upload' | 'instructions' | 'exam' | 'terminated' | 'finished') => void;
+  cuetQuestions: any[];
+  setCuetQuestions: (qs: any[]) => void;
+  cuetAnswers: Record<number, string>;
+  setCuetAnswers: (as: Record<number, string>) => void;
+  cuetTimeLeft: number;
+  setCuetTimeLeft: (t: number | ((prev: number) => number)) => void;
+  cuetIsLocked: boolean;
+  setCuetIsLocked: (l: boolean) => void;
+  cuetResult: any;
+  setCuetResult: (r: any) => void;
+  handleCuetImageUpload: (file: File) => Promise<void>;
 }
 
 enum OperationType {
@@ -1287,1927 +1321,596 @@ const TeacherDashboard = ({
 );
 
 const AppContent: React.FC = () => {
-  // Connection Test
-  const [dbStatus, setDbStatus] = useState<'checking' | 'online' | 'offline' | 'error'>('checking');
-  const [dbError, setDbError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const testConnection = async () => {
-      try {
-        console.log("Testing Firestore connection...");
-        // Use getDocFromServer to force a network request
-        await getDocFromServer(doc(db, '_connection_test', 'test'));
-        console.log("Firestore connection successful");
-        setDbStatus('online');
-      } catch (error: any) {
-        console.error("Firestore connection test failed:", error);
-        if (error.message?.includes('the client is offline')) {
-          setDbStatus('offline');
-          setDbError("Firestore is offline. Please check your internet or Firebase config.");
-        } else if (error.code === 'permission-denied') {
-          // This is actually good, it means we reached the server but were denied
-          setDbStatus('online');
-        } else {
-          setDbStatus('error');
-          setDbError(error.message || "Unknown Firestore error");
-        }
-      }
-    };
-    testConnection();
-  }, []);
-
-  // Auth State
-  const [currentUser, setCurrentUser] = useState<UserData | null>(null);
-  const [view, setView] = useState<'login' | 'signup' | 'dashboard'>('login');
-  const [signupType, setSignupType] = useState<UserRole>('student');
-
-  // App Data State
-  const [resources, setResources] = useState<Resource[]>([]);
-  const [notices, setNotices] = useState<Notice[]>([]);
-  const [allUsers, setAllUsers] = useState<UserData[]>([]);
-  const [selectedResource, setSelectedResource] = useState<Resource | null>(null);
-  const [selectedNotice, setSelectedNotice] = useState<Notice | null>(null);
-
-  // Dashboard Navigation State
-  const [activeTab, setActiveTab] = useState<'video' | 'note' | 'question' | 'notice' | 'profile' | 'users' | 'ai-plan' | 'ai-test'>('video');
-  const [adminUserTab, setAdminUserTab] = useState<'students' | 'teachers'>('students');
-  const [studentView, setStudentView] = useState<'main' | 'school' | 'self-study'>('main');
-  const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string | null>(null);
-  const [selectedClassFilter, setSelectedClassFilter] = useState<string | null>(null);
-
-  // Admin/Teacher Form State
-  const [resourceForm, setResourceForm] = useState({
-    title: '',
-    content: '',
-    type: 'video' as 'video' | 'note' | 'question',
-    subject: '',
-    className: ''
-  });
-  const [noticeForm, setNoticeForm] = useState({
-    title: '',
-    content: '',
-    type: 'subject' as 'school' | 'subject',
-    subject: '',
-    className: ''
-  });
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [editingResource, setEditingResource] = useState<Resource | null>(null);
-  const [editingProfile, setEditingProfile] = useState(false);
-  const [showResourceForm, setShowResourceForm] = useState(false);
-  const [showNoticeForm, setShowNoticeForm] = useState(false);
-  const [showAiHelper, setShowAiHelper] = useState(false);
-
-  // AI State
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [aiInput, setAiInput] = useState('');
+  // CUET Exam Hub State
+  const [cuetStatus, setCuetStatus] = useState<'upload' | 'instructions' | 'exam' | 'terminated' | 'finished'>('upload');
+  const [cuetQuestions, setCuetQuestions] = useState<any[]>([]);
+  const [cuetAnswers, setCuetAnswers] = useState<Record<number, string>>({});
+  const [cuetStatusMap, setCuetStatusMap] = useState<Record<number, 'not-visited' | 'not-answered' | 'answered' | 'marked' | 'answered-marked'>>({});
+  const [cuetTimeLeft, setCuetTimeLeft] = useState(3600); // 60 minutes
+  const [cuetIsLocked, setCuetIsLocked] = useState(false);
+  const [cuetResult, setCuetResult] = useState<any>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
-  const [aiPlan, setAiPlan] = useState<string | null>(null);
-  const [currentTest, setCurrentTest] = useState<any | null>(null);
-  const [testAnswers, setTestAnswers] = useState<Record<string, string>>({});
-  const [testResult, setTestResult] = useState<any | null>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Validate Connection to Firestore
-  useEffect(() => {
-    const testConnection = async () => {
-      try {
-        await getDocFromServer(doc(db, 'test', 'connection'));
-      } catch (error) {
-        if (error instanceof Error && error.message.includes('the client is offline')) {
-          console.error("Please check your Firebase configuration.");
-        }
-      }
-    };
-    testConnection();
-  }, []);
+  // Auto-fill candidate name
+  const candidateName = "PALLAVI";
 
-  // Real-time Resources Listener
-  useEffect(() => {
-    const q = query(collection(db, 'resources'), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const resList: Resource[] = [];
-      snapshot.forEach((doc) => {
-        resList.push({ id: doc.id, ...doc.data() } as Resource);
-      });
-      setResources(resList);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, 'resources');
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Real-time Notices Listener
-  useEffect(() => {
-    const q = query(collection(db, 'notices'), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const noticeList: Notice[] = [];
-      snapshot.forEach((doc) => {
-        noticeList.push({ id: doc.id, ...doc.data() } as Notice);
-      });
-      setNotices(noticeList);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, 'notices');
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Real-time Users Listener (for Main Admin)
-  useEffect(() => {
-    if (currentUser?.role === 'main-admin') {
-      const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const userList: UserData[] = [];
-        snapshot.forEach((doc) => {
-          userList.push({ uid: doc.id, ...doc.data() } as UserData);
-        });
-        setAllUsers(userList);
-      }, (error) => {
-        handleFirestoreError(error, OperationType.GET, 'users');
-      });
-      return () => unsubscribe();
-    }
-  }, [currentUser]);
-
-  // Class Promotion Logic (April 1st)
-  useEffect(() => {
-    const promoteStudents = async () => {
-      if (currentUser?.role === 'student' && currentUser.uid) {
-        const now = new Date();
-        const currentYear = now.getFullYear();
-        const promotionDate = new Date(currentYear, 3, 1); // April 1st of current year
-
-        const lastPromotion = currentUser.lastPromotionDate ? currentUser.lastPromotionDate.toDate() : new Date(0);
-        
-        if (now >= promotionDate && lastPromotion < promotionDate) {
-          const classNum = parseInt(currentUser.class?.replace('Class ', '') || '0');
-          if (classNum > 0 && classNum < 12) {
-            const nextClass = `Class ${classNum + 1}`;
-            try {
-              await setDoc(doc(db, 'users', currentUser.uid), {
-                class: nextClass,
-                lastPromotionDate: serverTimestamp()
-              }, { merge: true });
-              setCurrentUser(prev => prev ? { ...prev, class: nextClass } : null);
-              console.log(`Student promoted to ${nextClass}`);
-            } catch (error) {
-              console.error('Promotion error:', error);
-            }
-          }
-        }
-      }
-    };
-    promoteStudents();
-  }, [currentUser]);
-
-  // Scroll to bottom of chat
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages]);
-
-  // --- PDF Download Handler ---
-  const downloadPdf = async (elementId: string, filename: string) => {
-    const element = document.getElementById(elementId);
-    if (!element) {
-      alert('Content element not found. Please try again.');
-      return;
-    }
-
-    try {
-      const jspdf = (jsPDF as any).default || jsPDF;
-      const h2c = (html2canvas as any).default || html2canvas;
-
-      const canvas = await h2c(element, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#020617',
-        logging: false,
-        onclone: (clonedDoc: Document) => {
-          // STRATEGY: Completely remove all existing styles and inject a safe, 
-          // standard CSS block. This bypasses the html2canvas "oklab" parser error
-          // because it will never see the modern Tailwind 4 color functions.
-          
-          // 1. Remove all existing style and link tags from the cloned document
-          const styles = clonedDoc.querySelectorAll('style, link[rel="stylesheet"]');
-          styles.forEach(s => s.remove());
-
-          // 2. Inject a safe, standard CSS block
-          const safeStyle = clonedDoc.createElement('style');
-          safeStyle.textContent = `
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
-            
-            :root {
-              color-scheme: dark;
-            }
-            
-            body {
-              background-color: #020617 !important;
-              color: #ffffff !important;
-              font-family: 'Inter', sans-serif !important;
-            }
-
-            #${elementId} {
-              background-color: #020617 !important;
-              color: #ffffff !important;
-              padding: 40px !important;
-              width: 800px !important;
-              margin: 0 auto !important;
-              font-family: 'Inter', sans-serif !important;
-              line-height: 1.6 !important;
-            }
-
-            .markdown-body {
-              color: #ffffff !important;
-              font-size: 16px !important;
-            }
-
-            .markdown-body h1, .markdown-body h2, .markdown-body h3 {
-              color: #00f3ff !important;
-              margin-top: 24px !important;
-              margin-bottom: 16px !important;
-              font-weight: 700 !important;
-            }
-
-            .markdown-body p { margin-bottom: 16px !important; }
-
-            .markdown-body table { 
-              border-collapse: collapse !important; 
-              width: 100% !important; 
-              margin-bottom: 24px !important;
-              border: 1px solid rgba(255,255,255,0.1) !important;
-            }
-
-            .markdown-body th, .markdown-body td { 
-              border: 1px solid rgba(255,255,255,0.1) !important; 
-              padding: 12px !important; 
-              text-align: left !important; 
-            }
-
-            .markdown-body th { 
-              background: rgba(0,243,255,0.1) !important; 
-              color: #00f3ff !important; 
-            }
-
-            .markdown-body code {
-              background: rgba(255,255,255,0.1) !important;
-              padding: 2px 4px !important;
-              border-radius: 4px !important;
-              font-family: monospace !important;
-            }
-
-            /* Handle the specific UI elements in the test view */
-            .selected-option {
-              background: rgba(0, 243, 255, 0.2) !important;
-              border: 1px solid #00f3ff !important;
-              color: #ffffff !important;
-              padding: 8px 16px !important;
-              border-radius: 8px !important;
-              display: inline-block !important;
-              margin: 4px !important;
-            }
-
-            .test-question {
-              margin-bottom: 32px !important;
-              padding-bottom: 16px !important;
-              border-bottom: 1px solid rgba(255,255,255,0.05) !important;
-            }
-
-            .test-answer-box {
-              border: 1px solid rgba(255,255,255,0.1) !important;
-              padding: 16px !important;
-              background: rgba(255,255,255,0.02) !important;
-              border-radius: 12px !important;
-              margin-top: 8px !important;
-              white-space: pre-wrap !important;
-            }
-          `;
-          clonedDoc.head.appendChild(safeStyle);
-
-          const clonedElement = clonedDoc.getElementById(elementId);
-          if (clonedElement) {
-            // Handle textareas by replacing them with styled divs
-            clonedElement.querySelectorAll('textarea').forEach(ta => {
-              const div = clonedDoc.createElement('div');
-              div.className = 'test-answer-box';
-              div.textContent = (ta as HTMLTextAreaElement).value || 'No answer provided.';
-              ta.replaceWith(div);
-            });
-
-            // Handle buttons
-            clonedElement.querySelectorAll('button').forEach(btn => {
-              if (btn.classList.contains('selected-option')) {
-                // Keep selected options but style them
-                const span = clonedDoc.createElement('span');
-                span.className = 'selected-option';
-                span.textContent = btn.textContent;
-                btn.replaceWith(span);
-              } else {
-                // Remove unselected buttons to keep PDF clean
-                btn.remove();
-              }
-            });
-
-            // Remove any other interactive elements or icons that might not render well
-            clonedElement.querySelectorAll('svg, .lucide').forEach(icon => icon.remove());
-          }
-        }
-      });
-
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jspdf('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      
-      const imgProps = pdf.getImageProperties(imgData);
-      const imgWidth = pdfWidth - 20; // 10mm margin on each side
-      const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
-      
-      let heightLeft = imgHeight;
-      let position = 10; // 10mm top margin
-
-      const addPdfFooter = (p: any) => {
-        p.setFontSize(8);
-        p.setTextColor(150, 150, 150);
-        p.text('Generated By Edu-hub-india.netlify.app || Developed by SHUBHJEET RAM TRIPATHI', pdfWidth / 2, pdfHeight - 5, { align: 'center' });
-      };
-
-      addPdfFooter(pdf);
-      pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
-      heightLeft -= (pdfHeight - 20);
-
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight + 10;
-        pdf.addPage();
-        addPdfFooter(pdf);
-        pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
-        heightLeft -= (pdfHeight - 20);
-      }
-
-      pdf.save(`${filename}.pdf`);
-    } catch (error: any) {
-      console.error('PDF generation error:', error);
-      alert(`Failed to generate PDF: ${error.message || 'Unknown error'}. Try using a different browser or checking your internet connection.`);
-    }
-  };
-
-  const handlePromoteAllStudents = async () => {
-    if (!window.confirm('Are you sure you want to promote ALL students to the next class? This action cannot be undone.')) return;
-    
-    setIsUploading(true);
-    let count = 0;
-    try {
-      const students = allUsers.filter(u => u.role === 'student');
-      for (const student of students) {
-        const classNum = parseInt(student.class?.replace('Class ', '') || '0');
-        if (classNum > 0 && classNum < 12) {
-          const nextClass = `Class ${classNum + 1}`;
-          await setDoc(doc(db, 'users', student.uid), {
-            class: nextClass,
-            lastPromotionDate: serverTimestamp()
-          }, { merge: true });
-          count++;
-        }
-      }
-      alert(`Successfully promoted ${count} students!`);
-    } catch (error: any) {
-      console.error('Batch promotion error:', error);
-      alert(`Failed to promote some students: ${error.message}`);
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const handleSignup = async (data: any) => {
-    const id = (data.role === 'student' ? data.studentId : data.teacherId)?.trim();
-    if (!id) {
-      alert('ID is required');
-      return;
-    }
-    if (!data.password) {
-      alert('Password is required');
-      return;
-    }
-    
-    setIsUploading(true);
-    try {
-      // Ensure we are authenticated anonymously before any Firestore operation
-      if (!auth.currentUser) {
-        await signInAnonymously(auth);
-      }
-      const uid = auth.currentUser!.uid;
-
-      console.log('Checking if ID exists:', id);
-      const q = query(
-        collection(db, 'users'), 
-        where(data.role === 'student' ? 'studentId' : 'teacherId', '==', id)
-      );
-      
-      const querySnapshot = await getDocs(q);
-      if (!querySnapshot.empty) {
-        alert('ID already exists');
-        setIsUploading(false);
-        return;
-      }
-
-      console.log('Creating user document...');
-      const userData: UserData = {
-        uid: uid, // Use the current anonymous UID as the document ID
-        name: data.name,
-        role: data.role,
-        studentId: data.studentId?.trim() || '',
-        teacherId: data.teacherId?.trim() || '',
-        class: data.class || '',
-        classes: data.classes || [],
-        subjects: data.subjects || [],
-        mobile: data.mobile || '',
-        createdAt: serverTimestamp()
-      };
-      
-      await setDoc(doc(db, 'users', uid), { ...userData, password: data.password });
-
-      console.log('Signup successful');
-      alert('Signup successful! Please login.');
-      setView('login');
-    } catch (error: any) {
-      console.error('Signup error details:', error);
-      alert(`Signup failed: ${error.message || 'Check console for details'}`);
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const handleLogin = async (idInput: string, pass: string, role: UserRole) => {
-    const id = idInput?.trim();
-    console.log('Attempting login for:', id, 'Role:', role);
-    
-    setIsUploading(true);
-    try {
-      // Ensure Firebase Auth is active for everyone, including Main Admin
-      if (!auth.currentUser) {
-        try {
-          await signInAnonymously(auth);
-        } catch (authErr: any) {
-          console.error('Anonymous auth failed:', authErr);
-          // If auth fails, we can't proceed with Firestore operations
-          alert('Authentication failed. Please check your internet connection or Firebase configuration.');
-          setIsUploading(false);
-          return;
-        }
-      }
-
-      if (id === MAIN_ADMIN_EMAIL && pass === '91868194p') {
-        // Double check auth
-        if (!auth.currentUser) {
-          try {
-            await signInAnonymously(auth);
-          } catch (e) {
-            alert('Admin authentication failed. Please try again.');
-            setIsUploading(false);
-            return;
-          }
-        }
-        setCurrentUser({ 
-          uid: auth.currentUser?.uid || 'main-admin', 
-          name: 'Main Admin', 
-          role: 'main-admin', 
-          email: MAIN_ADMIN_EMAIL 
-        });
-        setView('dashboard');
-        setIsUploading(false);
-        return;
-      }
-
-      if (!id || !pass) {
-        alert('Please enter both ID and Password');
-        setIsUploading(false);
-        return;
-      }
-
-      const q = query(
-        collection(db, 'users'), 
-        where(role === 'student' ? 'studentId' : 'teacherId', '==', id)
-      );
-      
-      let querySnapshot;
-      try {
-        querySnapshot = await getDocs(q);
-      } catch (err) {
-        const errInfo = handleFirestoreError(err, OperationType.GET, 'users');
-        alert(`Login failed: ${errInfo.error}`);
-        return;
-      }
-      
-      if (querySnapshot.empty) {
-        alert('Invalid ID');
-        return;
-      }
-
-      const userDoc = querySnapshot.docs[0];
-      const userData = userDoc.data();
-
-      if (userData.role !== role) {
-        alert('Invalid Role for this ID');
-        return;
-      }
-
-      if (userData.password === pass) {
-        setCurrentUser({ uid: userDoc.id, ...userData } as UserData);
-        setView('dashboard');
-      } else {
-        alert('Invalid Password');
-      }
-    } catch (error) {
-      console.error('Login error details:', error);
-      alert('Login failed. Check console for details.');
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const handleLogout = () => {
-    setCurrentUser(null);
-    setView('login');
-    setActiveTab('video');
-    setSelectedSubjectFilter(null);
-    setSelectedClassFilter(null);
-  };
-
-  // --- Resource/Notice Handlers ---
-  const uploadFile = async (file: File, folder: string) => {
-    const fileRef = ref(storage, `${folder}/${Date.now()}_${file.name}`);
-    await uploadBytes(fileRef, file);
-    return {
-      url: await getDownloadURL(fileRef),
-      name: file.name
-    };
-  };
-
-  const handleAddResource = async () => {
-    if (!resourceForm.title || !resourceForm.content || !resourceForm.subject || !resourceForm.className) {
-      alert('Please fill all fields (Title, Subject, Class, and Content)');
-      return;
-    }
-
-    setIsUploading(true);
-    try {
-      // Ensure Auth
-      if (!auth.currentUser) {
-        await signInAnonymously(auth);
-      }
-
-      const dataToSave = {
-        ...resourceForm,
-        fileUrl: '',
-        fileName: '',
-        updatedAt: serverTimestamp()
-      };
-
-      if (editingResource) {
-        await setDoc(doc(db, 'resources', editingResource.id), dataToSave, { merge: true });
-        alert('Resource updated successfully!');
-      } else {
-        await addDoc(collection(db, 'resources'), {
-          ...dataToSave,
-          authorId: currentUser?.uid,
-          authorName: currentUser?.name,
-          createdAt: serverTimestamp()
-        });
-        alert('Resource added successfully!');
-      }
-      setResourceForm({ title: '', content: '', type: 'video', subject: '', className: '' });
-      setSelectedFile(null);
-      setEditingResource(null);
-      setShowResourceForm(false);
-    } catch (error: any) {
-      console.error('Save error details:', error);
-      handleFirestoreError(error, OperationType.WRITE, 'resources');
-      alert(`UPLOAD FAILED!\n\nError Code: ${error.code || 'unknown'}\nMessage: ${error.message}`);
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const handleAddNotice = async () => {
-    if (!noticeForm.title || !noticeForm.content || (noticeForm.type === 'subject' && !noticeForm.subject)) {
-      alert('Please fill all fields');
-      return;
-    }
-
-    setIsUploading(true);
-    try {
-      // Ensure Auth
-      if (!auth.currentUser) {
-        await signInAnonymously(auth);
-      }
-
-      await addDoc(collection(db, 'notices'), {
-        ...noticeForm,
-        fileUrl: '',
-        fileName: '',
-        authorId: currentUser?.uid,
-        authorName: currentUser?.name,
-        createdAt: serverTimestamp()
-      });
-      alert('Notice posted successfully!');
-      setNoticeForm({ title: '', content: '', type: 'subject', subject: '', className: '' });
-      setSelectedFile(null);
-      setShowNoticeForm(false);
-    } catch (error: any) {
-      console.error('Notice error:', error);
-      alert(`Failed to post notice: ${error.message || 'Unknown error'}`);
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const handleDeleteResource = async (id: string) => {
-    if (window.confirm('Are you sure you want to delete this resource?')) {
-      try {
-        await deleteDoc(doc(db, 'resources', id));
-        alert('Resource deleted successfully!');
-      } catch (error: any) {
-        console.error('Delete error:', error);
-        alert(`Failed to delete resource: ${error.message}`);
-      }
-    }
-  };
-
-  const handleAiAsk = async (type: 'chat' | 'plan' | 'test' | 'evaluate', input: string) => {
-    if (!input.trim() && type === 'chat') return;
-    
+  const handleCuetTextUpload = async (pastedText: string) => {
     const apiKey = process.env.GEMINI_API_KEY || (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY);
     
     if (!apiKey) {
-      alert("AI Service is currently unavailable. Please ensure GEMINI_API_KEY is set in your environment variables.");
+      alert("AI Service is currently unavailable. Please ensure GEMINI_API_KEY is set.");
+      return;
+    }
+
+    if (!pastedText.trim()) {
+      alert("Please paste some text first.");
       return;
     }
 
     setIsAiLoading(true);
     try {
-      const genAI = new GoogleGenAI({ apiKey });
-      const studentContext = currentUser?.role === 'student' ? `Student Name: ${currentUser.name}, Class: ${currentUser.class}. ` : '';
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `Extract all multiple choice questions from the following text. 
+      Format each question as an object with:
+      1. question: the text of the question
+      2. options: an array of EXACTLY 4 strings
+      3. correct: the index (0-3) of the correct answer based on the content
       
-      // Using gemini-3-flash-preview for better speed and higher free-tier quota
-      const model = genAI.models.generateContent({
+      Text to process:
+      ${pastedText}
+      
+      Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "correct": 0}]. If no questions are found, return [].`;
+
+      const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        config: {
-          systemInstruction: `You are Shiksha AI, an expert NCERT educational assistant. 
-          Your goal is to help students excel in their studies. ${studentContext}
-          - For 'chat': Answer academic questions clearly using NCERT context. Address the student by name if known.
-          - For 'plan': Generate a structured 7-day study plan based on the topic/subject. Format it as a Markdown table with columns: Day, Topic, Key Concepts, and Practice Tasks.
-          - For 'test': Create a difficult test for the given topic. The test MUST include:
-            1. 5 Multiple Choice Questions (MCQs) - 1 mark each.
-            2. 6 Short Answer Questions - 2 marks each.
-            3. 1 Long Answer Question - 3 marks.
-            Return ONLY a JSON object: {
-              "title": "Difficult Test: [Topic]",
-              "mcqs": [{"id": 1, "question": "...", "options": ["A", "B", "C", "D"], "correct": "A"}],
-              "shortQuestions": [{"id": 1, "question": "...", "marks": 2}],
-              "longQuestion": {"question": "...", "marks": 3}
-            }.
-          - For 'evaluate': Compare student answers with correct ones and provide a score and feedback. Return ONLY a JSON object: {"score": "X/20", "feedback": "..."}.
-          Keep responses encouraging, professional, and difficult for tests.`,
-        },
-        contents: type === 'chat' 
-          ? [...chatMessages.map(m => ({ role: m.role, parts: [{ text: m.text }] })), { role: 'user', parts: [{ text: input }] }]
-          : [{ role: 'user', parts: [{ text: input }] }]
+        contents: [{ parts: [{ text: prompt }] }],
       });
-
-      const response = await model;
-      const text = response.text || '';
-
-      if (type === 'chat') {
-        setChatMessages(prev => [...prev, { role: 'user', text: input }, { role: 'model', text }]);
-        setAiInput('');
-      } else if (type === 'plan') {
-        setAiPlan(text);
-      } else if (type === 'test') {
-        try {
-          const cleanedJson = text.replace(/```json|```/g, '').trim();
-          const parsedTest = JSON.parse(cleanedJson);
-          setCurrentTest(parsedTest);
-          setTestAnswers({});
-          setTestResult(null);
-        } catch (e) {
-          console.error("Failed to parse test JSON:", e);
-          // Fallback: try to find JSON block manually if regex fails
-          const jsonMatch = text.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            try {
-              setCurrentTest(JSON.parse(jsonMatch[0]));
-              setTestAnswers({});
-              setTestResult(null);
-            } catch (innerE) {
-              alert("Failed to generate test. Shiksha AI returned an invalid format. Please try again.");
-            }
-          } else {
-            alert("Failed to generate test. Shiksha AI returned an invalid format. Please try again.");
-          }
+      const text = response.text;
+      
+      if (!text) {
+        alert("AI returned an empty response. Please try again.");
+        return;
+      }
+      
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        const extractedQuestions = JSON.parse(jsonMatch[0]);
+        if (extractedQuestions.length > 0) {
+          setCuetQuestions(extractedQuestions);
+          setCuetStatus('instructions');
+          setCuetAnswers({});
+          setCuetStatusMap({});
+          setCuetTimeLeft(3600);
+        } else {
+          alert("AI couldn't find any questions in the text provided. Please check the format.");
         }
-      } else if (type === 'evaluate') {
-        try {
-          const cleanedJson = text.replace(/```json|```/g, '').trim();
-          setTestResult(JSON.parse(cleanedJson));
-        } catch (e) {
-          console.error("Failed to parse evaluation JSON:", e);
-          const jsonMatch = text.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            try {
-              setTestResult(JSON.parse(jsonMatch[0]));
-            } catch (innerE) {
-              alert("Failed to evaluate test. Shiksha AI returned an invalid format. Please try again.");
-            }
-          } else {
-            alert("Failed to evaluate test. Shiksha AI returned an invalid format. Please try again.");
-          }
-        }
+      } else {
+        alert("Found issue parsing AI response. Please try again.");
       }
     } catch (error: any) {
-      console.error("AI Error:", error);
-      const errorMessage = error.message || "Unknown error";
-      if (errorMessage.toLowerCase().includes('quota') || errorMessage.toLowerCase().includes('429')) {
-        alert(`Shiksha AI Limit Reached (Free Tier): You are using a free API key which has strict limits. For 2000+ users, please upgrade to a Paid Gemini API Key in the Google AI Studio settings. \n\nSolution: Wait 60 seconds and try again, or use a paid key for unlimited access.`);
-      } else {
-        alert(`Shiksha AI Error: ${errorMessage}\n\nIf you are on Netlify, make sure you have added VITE_GEMINI_API_KEY to your Environment Variables.`);
-      }
+      console.error('CUET Text Extraction Error:', error);
+      alert('Failed to process text: ' + (error.message || 'Unknown error'));
     } finally {
       setIsAiLoading(false);
     }
   };
 
-  // --- Auth Handlers ---
+  const handleCuetImageUpload = async (file: File) => {
+    const apiKey = process.env.GEMINI_API_KEY || (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY);
+    
+    if (!apiKey) {
+      alert("AI Service is currently unavailable. Please ensure GEMINI_API_KEY is set.");
+      return;
+    }
 
-const CyberBackground = () => {
-  useEffect(() => {
-    const style = document.createElement('style');
-    style.textContent = `
-      @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&family=Michroma&family=Audiowide&family=Exo+2:wght@100;200;300;400;500;600;700;800;900&display=swap');
+    setIsAiLoading(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey });
       
-      :root {
-        --font-orbitron: "Orbitron", sans-serif;
-        --font-rajdhani: "Rajdhani", sans-serif;
-        --font-space: "Space Grotesk", sans-serif;
-        --font-michroma: "Michroma", sans-serif;
-        --font-audiowide: "Audiowide", sans-serif;
-        --font-exo: "Exo 2", sans-serif;
-        
-        --color-cyber-blue: #00f3ff;
-        --color-cyber-pink: #ff00ff;
-        --color-cyber-purple: #9d00ff;
-        --color-cyber-green: #00ff9f;
-      }
+      const fileToGenerativePart = async (file: File) => {
+        const base64EncodedDataPromise = new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+          reader.readAsDataURL(file);
+        });
+        return {
+          inlineData: { data: await base64EncodedDataPromise as string, mimeType: file.type },
+        };
+      };
 
-      body {
-        background-color: #020617;
-        color: #e2e8f0;
-        font-family: var(--font-space);
-        overflow-x: hidden;
-        margin: 0;
-      }
+      const imageData = await fileToGenerativePart(file);
+      const prompt = `Extract all questions from this CUET question paper image. 
+      Format each question as an object with:
+      1. question: the text of the question
+      2. options: an array of 4 strings
+      3. correct: the index (0-3) of the correct answer
+      
+      Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "correct": 0}]`;
 
-      .glass-panel {
-        background: rgba(255, 255, 255, 0.05);
-        backdrop-filter: blur(20px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: [{ parts: [{ text: prompt }, imageData] }],
+      });
+      const text = response.text;
+      
+      if (!text) {
+        alert("AI returned an empty response. Please try again.");
+        return;
       }
       
-      .cyber-button {
-        position: relative;
-        overflow: hidden;
-        transition: all 0.3s ease;
-        clip-path: polygon(10% 0, 100% 0, 100% 70%, 90% 100%, 0 100%, 0 30%);
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        const extractedQuestions = JSON.parse(jsonMatch[0]);
+        if (extractedQuestions.length > 0) {
+          setCuetQuestions(extractedQuestions);
+          setCuetStatus('instructions');
+          setCuetAnswers({});
+          setCuetStatusMap({});
+          setCuetTimeLeft(3600);
+        } else {
+          alert("AI couldn't find any questions in the image. Please try a clearer one.");
+        }
+      } else {
+        alert("Found issue parsing AI response. Please try again.");
       }
-      .cyber-button:active { transform: scale(0.95); }
-      
-      .neon-text { text-shadow: 0 0 10px currentColor; }
-      .neon-border { box-shadow: 0 0 15px currentColor; }
+    } catch (error: any) {
+      console.error('CUET Extraction Error:', error);
+      alert('Failed to process image: ' + (error.message || 'Unknown error'));
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
 
-      .cyber-bg {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        z-index: -1;
-        background: radial-gradient(circle at 50% 50%, #0a0a1a 0%, #020205 100%);
-        overflow: hidden;
-      }
 
-      .cyber-grid {
-        position: absolute;
-        width: 200%;
-        height: 200%;
-        top: -50%;
-        left: -50%;
-        background-image: 
-          linear-gradient(to right, rgba(0, 243, 255, 0.05) 1px, transparent 1px),
-          linear-gradient(to bottom, rgba(0, 243, 255, 0.05) 1px, transparent 1px);
-        background-size: 50px 50px;
-        transform: perspective(500px) rotateX(60deg);
-        animation: grid-move 20s linear infinite;
-      }
 
-      @keyframes grid-move {
-        0% { transform: perspective(500px) rotateX(60deg) translateY(0); }
-        100% { transform: perspective(500px) rotateX(60deg) translateY(50px); }
-      }
-
-      .cyber-scanline {
-        position: absolute;
-        width: 100%;
-        height: 100px;
-        background: linear-gradient(to bottom, transparent, rgba(0, 243, 255, 0.1), transparent);
-        top: -100px;
-        animation: scanline 8s linear infinite;
-      }
-
-      @keyframes scanline {
-        0% { top: -100px; }
-        100% { top: 100%; }
-      }
-
-      .cyber-orb {
-        position: absolute;
-        width: 400px;
-        height: 400px;
-        border-radius: 50%;
-        filter: blur(50px);
-        animation: orb-float 15s ease-in-out infinite alternate;
-      }
-
-      @keyframes orb-float {
-        0% { transform: translate(-10%, -10%); }
-        100% { transform: translate(20%, 20%); }
-      }
-
-      .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-      .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); }
-      .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0, 243, 255, 0.2); border-radius: 10px; }
-      .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(0, 243, 255, 0.4); }
-    `;
-    document.head.appendChild(style);
-    return () => { document.head.removeChild(style); };
-  }, []);
-
+  // We force the app into the CUET flow directly as requested
   return (
-    <div className="cyber-bg">
-      <div className="cyber-grid" />
-      <div className="cyber-scanline" />
-      <div className="cyber-orb" style={{ top: '10%', left: '10%', background: 'radial-gradient(circle, rgba(0, 243, 255, 0.1) 0%, transparent 70%)' }} />
-      <div className="cyber-orb" style={{ bottom: '10%', right: '10%', background: 'radial-gradient(circle, rgba(157, 0, 255, 0.1) 0%, transparent 70%)', animationDelay: '-5s' }} />
+    <div className="min-h-screen bg-slate-950 font-sans">
+      <CUETExamView 
+        currentUser={{ name: candidateName }}
+        cuetStatus={cuetStatus}
+        setCuetStatus={setCuetStatus}
+        cuetQuestions={cuetQuestions}
+        setCuetQuestions={setCuetQuestions}
+        cuetAnswers={cuetAnswers}
+        setCuetAnswers={setCuetAnswers}
+        cuetTimeLeft={cuetTimeLeft}
+        setCuetTimeLeft={setCuetTimeLeft}
+        cuetIsLocked={cuetIsLocked}
+        setCuetIsLocked={setCuetIsLocked}
+        cuetResult={cuetResult}
+        setCuetResult={setCuetResult}
+        handleCuetImageUpload={handleCuetImageUpload}
+        handleCuetTextUpload={handleCuetTextUpload}
+        isAiLoading={isAiLoading}
+        cuetStatusMap={cuetStatusMap}
+        setCuetStatusMap={setCuetStatusMap}
+      />
     </div>
   );
 };
 
-const LoginView: React.FC<LoginViewProps> = ({ handleLogin, isUploading, setView, setSignupType }) => {
-  const [loginId, setLoginId] = useState('');
-  const [password, setPassword] = useState('');
-  const [loginRole, setLoginRole] = useState<UserRole>('student');
+const CUETExamView = ({
+  currentUser, cuetStatus, setCuetStatus, cuetQuestions, setCuetQuestions,
+  cuetAnswers, setCuetAnswers, cuetTimeLeft, setCuetTimeLeft,
+  cuetIsLocked, setCuetIsLocked, cuetResult, setCuetResult,
+  handleCuetImageUpload, handleCuetTextUpload, setStudentView, isAiLoading,
+  cuetStatusMap, setCuetStatusMap
+}: any) => {
+  const [activeQuestion, setActiveQuestion] = useState(0);
+  const [unlockCode, setUnlockCode] = useState('');
+  const [pastedText, setPastedText] = useState('');
 
-  return (
-    <div className="min-h-screen flex items-center justify-center p-4 sm:p-6 font-space relative overflow-hidden">
-      <CyberBackground />
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="glass-panel p-5 sm:p-8 rounded-3xl max-w-md w-full border-cyber-blue/20 relative z-10"
-      >
-        <div className="text-center mb-5 sm:mb-8">
-          <motion.div 
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: 'spring', damping: 12 }}
-            className="bg-cyber-blue/20 w-14 h-14 sm:w-20 sm:h-20 rounded-2xl flex items-center justify-center mx-auto mb-3 sm:mb-4 border border-cyber-blue/40 shadow-[0_0_20px_rgba(0,243,255,0.3)]"
-          >
-            <GraduationCap className="text-cyber-blue w-8 h-8 sm:w-12 sm:h-12" />
-          </motion.div>
-          <h1 className="text-xl sm:text-4xl font-orbitron font-black text-white tracking-tighter neon-text mb-1 sm:mb-2">EDUHUB</h1>
-          <p className="text-cyber-blue/70 font-rajdhani font-bold uppercase tracking-[0.2em] text-[8px] sm:text-sm">Neural Learning Interface</p>
+  // Proctoring logic
+  useEffect(() => {
+    if (cuetStatus === 'exam') {
+      const handleBlur = () => {
+        setCuetStatus('terminated');
+        setCuetIsLocked(true);
+      };
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'hidden') {
+          setCuetStatus('terminated');
+          setCuetIsLocked(true);
+        }
+      };
+      window.addEventListener('blur', handleBlur);
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      return () => {
+        window.removeEventListener('blur', handleBlur);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      };
+    }
+  }, [cuetStatus, setCuetStatus, setCuetIsLocked]);
+
+  // Timer
+  useEffect(() => {
+    if (cuetStatus === 'exam' && cuetTimeLeft > 0) {
+      const timer = setInterval(() => setCuetTimeLeft((prev: number) => prev - 1), 1000);
+      return () => clearInterval(timer);
+    } else if (cuetStatus === 'exam' && cuetTimeLeft === 0) {
+      handleFinishExam();
+    }
+  }, [cuetStatus, cuetTimeLeft]);
+
+  // Initialize status map for new questions
+  useEffect(() => {
+    if (cuetQuestions.length > 0 && Object.keys(cuetStatusMap).length === 0) {
+        const initialMap: any = {};
+        cuetQuestions.forEach((_: any, i: number) => initialMap[i] = 'not-visited');
+        // First question is viewed immediately
+        initialMap[0] = 'not-answered';
+        setCuetStatusMap(initialMap);
+    }
+  }, [cuetQuestions]);
+
+  const updateStatus = (index: number, status: any) => {
+      setCuetStatusMap({ ...cuetStatusMap, [index]: status });
+  };
+
+  const handleFinishExam = () => {
+    let score = 0;
+    let correct = 0;
+    let incorrect = 0;
+    let unattempted = 0;
+    cuetQuestions.forEach((q: any, idx: number) => {
+      const ans = cuetAnswers[idx];
+      if (ans === undefined) unattempted++;
+      else if (parseInt(ans) === q.correct) { score += 5; correct++; }
+      else { score -= 1; incorrect++; }
+    });
+    setCuetResult({ score, correct, incorrect, unattempted, total: cuetQuestions.length * 5 });
+    setCuetStatus('finished');
+  };
+
+  const handleAction = (action: 'save' | 'mark' | 'clear' | 'save-mark') => {
+      const currentAns = cuetAnswers[activeQuestion];
+      
+      if (action === 'clear') {
+          const newAns = { ...cuetAnswers };
+          delete newAns[activeQuestion];
+          setCuetAnswers(newAns);
+          updateStatus(activeQuestion, 'not-answered');
+          return;
+      }
+
+      if (action === 'save') {
+          if (currentAns === undefined) { alert("Please select an answer first."); return; }
+          updateStatus(activeQuestion, 'answered');
+      } else if (action === 'mark') {
+          updateStatus(activeQuestion, 'marked');
+      } else if (action === 'save-mark') {
+          if (currentAns === undefined) { alert("Please select an answer first."); return; }
+          updateStatus(activeQuestion, 'answered-marked');
+      }
+
+      // Move to next
+      if (activeQuestion < cuetQuestions.length - 1) {
+          const nextQ = activeQuestion + 1;
+          setActiveQuestion(nextQ);
+          if (cuetStatusMap[nextQ] === 'not-visited') {
+              updateStatus(nextQ, 'not-answered');
+          }
+      }
+  };
+
+  if (cuetIsLocked) {
+    return (
+      <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4">
+        <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-white p-8 rounded-3xl border border-red-500/30 max-w-md w-full text-center space-y-6">
+          <AlertTriangle className="w-12 h-12 text-red-500 mx-auto" />
+          <h2 className="text-2xl font-black text-slate-900 uppercase">Exam Terminated</h2>
+          <p className="text-slate-600 text-sm">Window switch detected. This event has been logged.</p>
+          <div className="bg-red-50 p-4 rounded-xl border border-red-100 text-red-700 text-[10px] font-bold uppercase">Candidate: PALLAVI | ID: CUET2026-X7Y</div>
+          <input 
+            type="text" value={unlockCode} onChange={(e) => setUnlockCode(e.target.value)}
+            placeholder="PROCTOR KEY" className="w-full bg-slate-100 border border-slate-200 rounded-xl px-4 py-3 text-center font-bold text-slate-900 uppercase tracking-widest outline-none"
+          />
+          <button onClick={() => unlockCode === 'DDYY22' ? (setCuetIsLocked(false), setCuetStatus('exam')) : alert('Invalid key. Contact proctor.')} className="w-full bg-red-600 text-white font-black py-3 rounded-xl uppercase tracking-tighter">Enter Exam Hall</button>
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (cuetStatus === 'upload') {
+    return (
+      <div className="max-w-xl mx-auto py-20 space-y-8 px-4">
+        <div className="text-center space-y-4">
+          <div className="flex justify-center mb-6"><img src="https://nta.ac.in/img/logo.png" className="h-16" alt="NTA" /></div>
+          <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">CUET 2026 PRACTICE PORTAL</h2>
+          <p className="text-slate-500 font-bold text-xs tracking-widest uppercase">Direct Question Data Import & Simulation</p>
         </div>
-
-        <div className="flex gap-1 sm:gap-2 mb-6 sm:mb-8 p-1 bg-white/5 rounded-xl border border-white/10">
-          {(['student', 'teacher', 'main-admin'] as const).map(r => (
-            <button
-              key={r}
-              onClick={() => setLoginRole(r)}
-              className={`flex-1 py-2 sm:py-2.5 text-[8px] sm:text-[10px] font-orbitron font-bold rounded-lg transition-all uppercase tracking-wider ${
-                loginRole === r ? 'bg-cyber-blue text-black shadow-[0_0_15px_rgba(0,243,255,0.5)]' : 'text-white/50 hover:text-white/80'
-              }`}
-            >
-              {r.replace('-', ' ')}
-            </button>
-          ))}
-        </div>
-
-        <div className="space-y-4 sm:space-y-6">
-          <div>
-            <label className="block text-[8px] sm:text-[10px] font-orbitron font-bold text-cyber-blue/60 mb-1 sm:mb-2 ml-1 uppercase tracking-widest">
-              {loginRole === 'student' ? 'Student ID' : loginRole === 'teacher' ? 'Teacher ID' : 'Admin Access'}
-            </label>
-            <div className="relative group">
-              <User className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-cyber-blue/40 w-4 h-4 sm:w-5 sm:h-5 group-focus-within:text-cyber-blue transition-colors" />
-              <input 
-                type="text" 
-                value={loginId}
-                onChange={(e) => setLoginId(e.target.value)}
-                className="w-full pl-10 sm:pl-12 pr-4 py-3 sm:py-4 bg-white/5 border border-white/10 rounded-xl focus:border-cyber-blue/50 focus:ring-1 focus:ring-cyber-blue/20 outline-none transition-all font-rajdhani text-base sm:text-lg tracking-wider text-white"
-                placeholder={loginRole === 'student' ? "STU-XXXX" : loginRole === 'teacher' ? "TCH-XXXX" : "ADMIN_AUTH"}
-              />
-            </div>
+        <div className="bg-white shadow-2xl p-8 rounded-[40px] border border-slate-100 space-y-6">
+          <div className="space-y-2">
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Paste Question Paper Content Here</label>
+            <textarea 
+              value={pastedText}
+              onChange={(e) => setPastedText(e.target.value)}
+              placeholder="Question 1: What is the capital of India?&#10;A) Mumbai&#10;B) New Delhi&#10;C) Kolkata&#10;D) Chennai..."
+              className="w-full h-64 p-6 bg-slate-50 border border-slate-200 rounded-3xl outline-none focus:border-blue-500 transition-all font-mono text-sm leading-relaxed"
+            />
           </div>
-
-          <div>
-            <label className="block text-[8px] sm:text-[10px] font-orbitron font-bold text-cyber-blue/60 mb-1 sm:mb-2 ml-1 uppercase tracking-widest">Security Key</label>
-            <div className="relative group">
-              <Lock className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-cyber-blue/40 w-4 h-4 sm:w-5 sm:h-5 group-focus-within:text-cyber-blue transition-colors" />
-              <input 
-                type="password" 
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 sm:pl-12 pr-4 py-3 sm:py-4 bg-white/5 border border-white/10 rounded-xl focus:border-cyber-blue/50 focus:ring-1 focus:ring-cyber-blue/20 outline-none transition-all font-rajdhani text-base sm:text-lg tracking-wider text-white"
-                placeholder="••••••••"
-              />
-            </div>
-          </div>
-
+          
           <button 
-            onClick={() => handleLogin(loginId, password, loginRole)}
-            disabled={isUploading}
-            className="w-full cyber-button bg-cyber-blue hover:bg-white text-black font-orbitron font-black py-3.5 sm:py-5 rounded-xl shadow-[0_0_20px_rgba(0,243,255,0.3)] transition-all mt-2 sm:mt-4 flex items-center justify-center gap-2 disabled:opacity-50 uppercase tracking-tighter text-xs sm:text-base"
+            onClick={() => handleCuetTextUpload(pastedText)}
+            disabled={isAiLoading || !pastedText.trim()}
+            className="w-full bg-blue-600 text-white font-black py-5 rounded-2xl uppercase tracking-tighter text-xl shadow-xl hover:bg-blue-700 active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-50"
           >
-            {isUploading ? (
+            {isAiLoading ? (
               <>
-                <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
-                Initializing...
+                <Loader2 className="w-6 h-6 animate-spin" />
+                NEURAL ANALYSIS IN PROGRESS...
               </>
             ) : (
-              'Access System'
+              <>
+                <Zap className="w-6 h-6" />
+                GENERATE PRACTICE EXAM
+              </>
             )}
           </button>
-
-          {loginRole !== 'main-admin' && (
-            <p className="text-center text-[10px] sm:text-xs font-rajdhani font-bold text-white/40 mt-6 sm:mt-8 uppercase tracking-widest">
-              New User?{' '}
-              <button 
-                onClick={() => { setSignupType(loginRole); setView('signup'); }} 
-                className="text-cyber-blue hover:text-white transition-colors underline underline-offset-4"
-              >
-                Register Identity
-              </button>
-            </p>
-          )}
+          
+          <div className="text-center">
+            <p className="text-slate-400 text-[10px] font-bold uppercase">AI will automatically identify questions, options, and answers</p>
+          </div>
         </div>
-      </motion.div>
-    </div>
-  );
-};
+        <div className="bg-amber-50 p-8 rounded-3xl border border-amber-100 space-y-3">
+            <div className="flex items-center gap-2 text-amber-700 font-black text-xs uppercase tracking-widest"><Info className="w-4 h-4"/> LEGAL DISCLAIMER</div>
+            <p className="text-[10px] text-amber-800/70 leading-relaxed font-medium">This application is a PRIVATE SIMULATION TOOL. We are NOT affiliated with NTA (National Testing Agency). All logos and names are property of their respective owners. Used here under "Fair Use" for educational practice purposes ONLY.</p>
+        </div>
+      </div>
+    );
+  }
 
-const SignupView: React.FC<SignupViewProps> = ({ handleSignup, setView, signupType, isUploading }) => {
-    const [formData, setFormData] = useState({
-      name: '',
-      studentId: '',
-      teacherId: '',
-      class: 'Class 6',
-      classes: [] as string[],
-      subjects: [] as string[],
-      mobile: '',
-      password: '',
-      role: signupType
-    });
+  if (cuetStatus === 'instructions') {
+    return (
+      <div className="max-w-2xl mx-auto py-20 px-4">
+        <div className="bg-white shadow-2xl p-10 rounded-[40px] border border-slate-100 space-y-10">
+            <div className="text-center space-y-2">
+                <Monitor className="w-16 h-16 text-blue-600 mx-auto mb-4" />
+                <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Exam Environment Check</h2>
+                <div className="h-1 w-20 bg-blue-600 mx-auto rounded-full" />
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                    <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Display Device</p>
+                    <p className="font-bold text-slate-900">Desktop/Laptop Preferred</p>
+                </div>
+                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                    <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Orientation</p>
+                    <p className="font-bold text-slate-900">Landscape Mode (Mobile)</p>
+                </div>
+                <div className="bg-red-50 p-6 rounded-2xl border border-red-100 sm:col-span-2">
+                    <p className="text-[10px] font-black text-red-400 uppercase mb-2">Proctoring Guard</p>
+                    <p className="font-bold text-red-900">DO NOT SWITCH TABS. ESCAPING FULLSCREEN LOCKS THE EXAM.</p>
+                </div>
+            </div>
 
-    const toggleMultiSelect = (field: 'classes' | 'subjects', value: string) => {
-      setFormData(prev => ({
-        ...prev,
-        [field]: prev[field].includes(value) 
-          ? prev[field].filter(v => v !== value)
-          : [...prev[field], value]
-      }));
+            <button onClick={() => setCuetStatus('exam')} className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl uppercase tracking-tighter text-xl shadow-xl hover:bg-black transition-all">Begin Examination</button>
+            <div className="text-center">
+                <button onClick={() => setCuetStatus('upload')} className="text-slate-400 font-bold text-[10px] uppercase hover:text-slate-900 transition-all underline underline-offset-4">Change Question Paper</button>
+            </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (cuetStatus === 'exam') {
+    const currentQ = cuetQuestions[activeQuestion];
+    const formatTime = (s: number) => {
+        const h = Math.floor(s/3600);
+        const m = Math.floor((s % 3600)/60);
+        const sec = s % 60;
+        return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;
+    };
+
+    const StatusBadge = ({ type, count, label }: { type: any, count: number, label: string }) => {
+        const shapes: any = {
+            'not-visited': 'bg-white border text-slate-900 rounded',
+            'not-answered': 'bg-red-500 text-white rounded-t-3xl rounded-b-lg',
+            'answered': 'bg-green-600 text-white rounded-b-3xl rounded-t-lg',
+            'marked': 'bg-indigo-600 text-white rounded-full',
+            'answered-marked': 'bg-indigo-600 text-white rounded-full relative after:content-[""] after:absolute after:bottom-0 after:right-0 after:w-3 after:h-3 after:bg-green-500 after:rounded-full after:border-2 after:border-white'
+        };
+        return (
+            <div className="flex items-center gap-3">
+                <div className={`${shapes[type]} w-6 h-6 flex items-center justify-center font-bold text-[10px] shadow-sm`}>{count}</div>
+                <span className="text-[10px] font-bold text-slate-500 uppercase">{label}</span>
+            </div>
+        );
+    };
+
+    const counts = {
+        'not-visited': Object.values(cuetStatusMap).filter(v => v === 'not-visited').length,
+        'not-answered': Object.values(cuetStatusMap).filter(v => v === 'not-answered').length,
+        'answered': Object.values(cuetStatusMap).filter(v => v === 'answered').length,
+        'marked': Object.values(cuetStatusMap).filter(v => v === 'marked').length,
+        'answered-marked': Object.values(cuetStatusMap).filter(v => v === 'answered-marked').length,
     };
 
     return (
-      <div className="min-h-screen flex items-center justify-center p-6 font-space relative overflow-hidden">
-        <CyberBackground />
-        <motion.div 
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="glass-panel p-5 sm:p-8 rounded-3xl max-w-2xl w-full border-cyber-purple/20 relative z-10"
-        >
-          <div className="flex justify-between items-center mb-5 sm:mb-8">
-            <button onClick={() => setView('login')} className="p-1.5 sm:p-2 hover:bg-white/10 rounded-full transition-all text-white/60">
-              <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
-            </button>
-            <div className="text-right">
-              <h2 className="text-lg sm:text-3xl font-orbitron font-black text-white tracking-tighter neon-text">REGISTRATION</h2>
-              <p className="text-cyber-purple/70 font-rajdhani font-bold uppercase tracking-widest text-[8px] sm:text-[10px]">New {signupType} Profile</p>
+      <div className="fixed inset-0 bg-[#f4f7f9] text-slate-800 z-[90] flex flex-col font-sans">
+        {/* NTA Master Header */}
+        <div className="bg-white border-b flex flex-col sm:flex-row justify-between items-center px-6 py-3 shadow-md z-[100]">
+          <div className="flex items-center gap-4">
+            <img src="https://nta.ac.in/img/logo.png" className="h-12" alt="NTA" />
+            <div className="h-10 w-[2px] bg-slate-200 mx-2 hidden sm:block" />
+            <div>
+              <h1 className="text-xl font-black text-slate-900 tracking-tighter uppercase leading-none">NATIONAL TESTING AGENCY</h1>
+              <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mt-1">Excellence in Assessment</p>
             </div>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8">
-            <div className="space-y-3 sm:space-y-4">
-              <div>
-                <label className="block text-[8px] sm:text-[10px] font-orbitron font-bold text-cyber-purple/60 mb-1 sm:mb-2 uppercase tracking-widest">Full Name</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-4 py-2.5 sm:py-3 bg-white/5 border border-white/10 rounded-xl focus:border-cyber-purple/50 outline-none text-white font-rajdhani text-sm sm:text-base"
-                  placeholder="John Doe"
-                />
-              </div>
-
-              {formData.role === 'student' ? (
-                <>
-                  <div>
-                    <label className="block text-[8px] sm:text-[10px] font-orbitron font-bold text-cyber-purple/60 mb-1 sm:mb-2 uppercase tracking-widest">Student ID</label>
-                    <input
-                      type="text"
-                      value={formData.studentId}
-                      onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
-                      className="w-full px-4 py-2.5 sm:py-3 bg-white/5 border border-white/10 rounded-xl focus:border-cyber-purple/50 outline-none text-white font-rajdhani text-sm sm:text-base"
-                      placeholder="STU123"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[8px] sm:text-[10px] font-orbitron font-bold text-cyber-purple/60 mb-1 sm:mb-2 uppercase tracking-widest">Class</label>
-                    <select
-                      value={formData.class}
-                      onChange={(e) => setFormData({ ...formData, class: e.target.value })}
-                      className="w-full px-4 py-2.5 sm:py-3 bg-white/5 border border-white/10 rounded-xl focus:border-cyber-purple/50 outline-none text-white font-rajdhani appearance-none text-sm sm:text-base"
-                    >
-                      {ALL_CLASSES.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
-                    </select>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <label className="block text-[8px] sm:text-[10px] font-orbitron font-bold text-cyber-purple/60 mb-1 sm:mb-2 uppercase tracking-widest">Teacher ID</label>
-                    <input
-                      type="text"
-                      value={formData.teacherId}
-                      onChange={(e) => setFormData({ ...formData, teacherId: e.target.value })}
-                      className="w-full px-4 py-2.5 sm:py-3 bg-white/5 border border-white/10 rounded-xl focus:border-cyber-purple/50 outline-none text-white font-rajdhani text-sm sm:text-base"
-                      placeholder="TCH123"
-                    />
-                  </div>
-                </>
-              )}
-
-              <div>
-                <label className="block text-[8px] sm:text-[10px] font-orbitron font-bold text-cyber-purple/60 mb-1 sm:mb-2 uppercase tracking-widest">Mobile Number</label>
-                <input
-                  type="tel"
-                  value={formData.mobile}
-                  onChange={(e) => setFormData({ ...formData, mobile: e.target.value })}
-                  className="w-full px-4 py-2.5 sm:py-3 bg-white/5 border border-white/10 rounded-xl focus:border-cyber-purple/50 outline-none text-white font-rajdhani text-sm sm:text-base"
-                  placeholder="+91 XXXXX XXXXX"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[8px] sm:text-[10px] font-orbitron font-bold text-cyber-purple/60 mb-1 sm:mb-2 uppercase tracking-widest">Security Password</label>
-                <input
-                  type="password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="w-full px-4 py-2.5 sm:py-3 bg-white/5 border border-white/10 rounded-xl focus:border-cyber-purple/50 outline-none text-white font-rajdhani text-sm sm:text-base"
-                  placeholder="••••••••"
-                />
-              </div>
+          <div className="flex gap-8 items-center bg-slate-50 px-6 py-2 rounded-2xl border border-slate-200 mt-3 sm:mt-0">
+            <div className="hidden lg:block text-center border-r pr-6">
+                <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Candidate Name</p>
+                <p className="text-xs font-black text-slate-800 uppercase tracking-tight">PALLAVI</p>
             </div>
-
-            <div className="space-y-3 sm:space-y-4">
-              {formData.role === 'teacher' && (
-                <>
-                  <div>
-                    <label className="block text-[8px] sm:text-[10px] font-orbitron font-bold text-cyber-purple/60 mb-1 sm:mb-2 uppercase tracking-widest">Assigned Classes</label>
-                    <div className="grid grid-cols-2 gap-2 max-h-32 sm:max-h-40 overflow-y-auto p-2 bg-white/5 rounded-xl border border-white/10">
-                      {ALL_CLASSES.map(c => (
-                        <button
-                          key={c}
-                          onClick={() => toggleMultiSelect('classes', c)}
-                          className={`px-2 py-1.5 sm:px-3 sm:py-2 text-[8px] sm:text-[10px] font-orbitron font-bold rounded-lg transition-all ${
-                            formData.classes.includes(c) 
-                              ? 'bg-cyber-purple text-white shadow-[0_0_10px_rgba(157,0,255,0.3)]' 
-                              : 'bg-white/5 text-white/40 border border-white/10 hover:bg-white/10'
-                          }`}
-                        >
-                          {c}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-[8px] sm:text-[10px] font-orbitron font-bold text-cyber-purple/60 mb-1 sm:mb-2 uppercase tracking-widest">Subjects</label>
-                    <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                      {ALL_SUBJECTS.map(s => (
-                        <button
-                          key={s}
-                          onClick={() => toggleMultiSelect('subjects', s)}
-                          className={`px-2 py-1.5 sm:px-3 sm:py-2 text-[8px] sm:text-[10px] font-orbitron font-bold rounded-lg transition-all ${
-                            formData.subjects.includes(s) 
-                              ? 'bg-cyber-purple text-white shadow-[0_0_10px_rgba(157,0,255,0.3)]' 
-                              : 'bg-white/5 text-white/40 border border-white/10 hover:bg-white/10'
-                          }`}
-                        >
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-
-              <button 
-                onClick={() => handleSignup({...formData, role: signupType})}
-                disabled={isUploading}
-                className="w-full cyber-button bg-cyber-purple hover:bg-white text-white hover:text-black font-orbitron font-black py-3.5 sm:py-5 rounded-xl shadow-[0_0_20px_rgba(157,0,255,0.3)] transition-all mt-4 sm:mt-6 flex items-center justify-center gap-2 disabled:opacity-50 uppercase tracking-tighter text-xs sm:text-base"
-              >
-                {isUploading ? <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" /> : 'Initialize Profile'}
-              </button>
+            <div className="text-center border-r pr-6">
+                <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Subject Name</p>
+                <p className="text-xs font-black text-blue-600 uppercase tracking-tight">CUET Practice</p>
             </div>
-          </div>
-        </motion.div>
-      </div>
-    );
-  };
-
-
-
-
-
-
-const AiHelperModal = ({ 
-  onClose, chatMessages, aiInput, setAiInput, handleAiAsk, isAiLoading, chatEndRef 
-}: { 
-  onClose: () => void, 
-  chatMessages: ChatMessage[], 
-  aiInput: string, 
-  setAiInput: (v: string) => void, 
-  handleAiAsk: (type: 'chat', input: string) => Promise<void>,
-  isAiLoading: boolean,
-  chatEndRef: React.RefObject<HTMLDivElement | null>
-}) => (
-  <motion.div 
-    initial={{ opacity: 0 }}
-    animate={{ opacity: 1 }}
-    exit={{ opacity: 0 }}
-    className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
-  >
-    <motion.div 
-      initial={{ scale: 0.9, y: 20 }}
-      animate={{ scale: 1, y: 0 }}
-      className="glass-panel w-full max-w-2xl h-[80vh] flex flex-col rounded-[32px] border border-cyber-blue/30 overflow-hidden shadow-[0_0_50px_rgba(0,243,255,0.15)]"
-    >
-      <div className="p-6 border-b border-white/10 flex items-center justify-between bg-cyber-blue/5">
-        <div className="flex items-center gap-3">
-          <div className="bg-cyber-blue/20 p-2 rounded-xl">
-            <MessageSquare className="text-cyber-blue w-6 h-6" />
-          </div>
-          <div>
-            <h3 className="font-orbitron font-black text-white text-xl uppercase tracking-tighter">Siksha AI</h3>
-            <p className="text-[10px] font-rajdhani font-bold text-cyber-blue/60 uppercase tracking-widest">NCERT Helper Assistant</p>
+            <div className="text-center">
+                <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Remaining Time</p>
+                <p className="text-lg font-mono font-black text-red-600 tabular-nums">{formatTime(cuetTimeLeft)}</p>
+            </div>
           </div>
         </div>
-        <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-all">
-          <X className="text-white/40 w-6 h-6" />
-        </button>
-      </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-4 no-scrollbar">
-        {chatMessages.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-40">
-            <GraduationCap className="w-16 h-16 text-cyber-blue" />
-            <p className="font-orbitron font-bold text-sm uppercase tracking-widest">How can I help your studies today?</p>
-          </div>
-        )}
-        {chatMessages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[85%] p-4 rounded-2xl font-rajdhani text-sm sm:text-base ${
-              msg.role === 'user' 
-                ? 'bg-cyber-blue text-black font-bold rounded-tr-none' 
-                : 'bg-white/5 text-white border border-white/10 rounded-tl-none'
-            }`}>
-              <ReactMarkdown>{msg.text}</ReactMarkdown>
+        {/* Section Bar */}
+        <div className="bg-[#ff9d00] px-6 py-2 flex items-center justify-between shadow-inner">
+            <div className="flex gap-1">
+                <button className="bg-blue-600 text-white px-6 py-1.5 rounded-t-lg font-black text-xs uppercase shadow-lg">GENERAL TEST</button>
             </div>
-          </div>
-        ))}
-        {isAiLoading && (
-          <div className="flex justify-start">
-            <div className="bg-white/5 p-4 rounded-2xl rounded-tl-none border border-white/10">
-              <Loader2 className="w-5 h-5 text-cyber-blue animate-spin" />
+            <div className="flex items-center gap-4 text-white">
+                <div className="flex items-center gap-2 text-[10px] font-bold uppercase"><Monitor className="w-4 h-4"/> Exam: CUET Simulation</div>
             </div>
-          </div>
-        )}
-        <div ref={chatEndRef} />
-      </div>
-
-      <div className="p-6 border-t border-white/10 bg-black/40">
-        <div className="relative">
-          <input 
-            value={aiInput}
-            onChange={(e) => setAiInput(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleAiAsk('chat', aiInput)}
-            placeholder="Ask anything about your NCERT subjects..."
-            className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 pr-16 text-white font-rajdhani focus:outline-none focus:border-cyber-blue transition-all"
-          />
-          <button 
-            onClick={() => handleAiAsk('chat', aiInput)}
-            disabled={isAiLoading || !aiInput.trim()}
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-3 bg-cyber-blue text-black rounded-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
-          >
-            <Send className="w-5 h-5" />
-          </button>
         </div>
-      </div>
-    </motion.div>
-  </motion.div>
-);
 
-const StudyPlanView = ({ aiPlan, handleAiAsk, isAiLoading, downloadPdf }: { aiPlan: string | null, handleAiAsk: (t: 'plan', i: string) => Promise<void>, isAiLoading: boolean, downloadPdf: (id: string, name: string) => Promise<void> }) => {
-  const [topic, setTopic] = useState('');
-  return (
-    <div className="space-y-6">
-      <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-white/10">
-        <h3 className="font-orbitron font-black text-white text-lg sm:text-xl uppercase tracking-tighter mb-4">Neural Study Architect</h3>
-        <div className="flex flex-col sm:flex-row gap-4">
-          <input 
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-            placeholder="Enter topic or subject (e.g., Quantum Physics)..."
-            className="flex-1 bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white font-rajdhani focus:outline-none focus:border-cyber-blue"
-          />
-          <button 
-            onClick={() => handleAiAsk('plan', topic)}
-            disabled={isAiLoading || !topic.trim()}
-            className="cyber-button bg-cyber-blue text-black font-orbitron font-bold py-3 px-8 rounded-xl disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {isAiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />}
-            Generate Plan
-          </button>
-        </div>
-      </div>
-
-      {aiPlan && (
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="glass-panel p-6 sm:p-8 rounded-3xl border border-cyber-blue/20"
-        >
-          <div className="flex justify-between items-center mb-6">
-            <h4 className="text-lg sm:text-xl font-orbitron font-black text-cyber-blue tracking-tighter uppercase">Your Neural Roadmap</h4>
-            <button 
-              onClick={() => downloadPdf('study-plan-content', 'Shiksha-AI-Study-Plan')}
-              className="flex items-center gap-2 px-4 py-2 bg-white/5 text-white/60 rounded-xl font-orbitron font-bold text-[10px] uppercase tracking-widest hover:text-white hover:bg-white/10 transition-all border border-white/10"
-            >
-              <Download className="w-4 h-4" />
-              Download PDF
-            </button>
-          </div>
-          <div id="study-plan-content" className="markdown-body p-4 bg-slate-900/50 rounded-2xl border border-white/5 overflow-x-auto">
-            <ReactMarkdown>{aiPlan}</ReactMarkdown>
-          </div>
-        </motion.div>
-      )}
-    </div>
-  );
-};
-
-const TestGeneratorView = ({ 
-  currentTest, handleAiAsk, isAiLoading, testAnswers, setTestAnswers, testResult, setTestResult, downloadPdf 
-}: { 
-  currentTest: any, handleAiAsk: any, isAiLoading: boolean, testAnswers: any, setTestAnswers: any, testResult: any, setTestResult: any, downloadPdf: (id: string, name: string) => Promise<void>
-}) => {
-  const [topic, setTopic] = useState('');
-  
-  const handleSubmitTest = () => {
-    const input = JSON.stringify({
-      test: currentTest,
-      answers: testAnswers
-    });
-    handleAiAsk('evaluate', input);
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-white/10">
-        <h3 className="font-orbitron font-black text-white text-lg sm:text-xl uppercase tracking-tighter mb-4">Neural Assessment Hub</h3>
-        <div className="flex flex-col sm:flex-row gap-4">
-          <input 
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-            placeholder="Topic for difficult test (e.g., Periodic Table)"
-            className="flex-1 bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white font-rajdhani focus:outline-none focus:border-cyber-pink"
-          />
-          <button 
-            onClick={() => handleAiAsk('test', topic)}
-            disabled={isAiLoading || !topic.trim()}
-            className="cyber-button bg-cyber-pink text-white font-orbitron font-bold py-3 px-8 rounded-xl disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {isAiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-            Initiate Test
-          </button>
-        </div>
-      </div>
-
-      {currentTest && (
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="glass-panel p-6 sm:p-8 rounded-3xl border border-white/10 space-y-8"
-        >
-          <div className="flex justify-between items-center mb-8">
-            <h4 className="font-orbitron font-black text-cyber-pink text-xl uppercase tracking-tighter">{currentTest.title}</h4>
-            <button 
-              onClick={() => downloadPdf('test-content', 'Shiksha-AI-Difficult-Test')}
-              className="flex items-center gap-2 px-4 py-2 bg-white/5 text-white/60 rounded-xl font-orbitron font-bold text-[10px] uppercase tracking-widest hover:text-white hover:bg-white/10 transition-all border border-white/10"
-            >
-              <Download className="w-4 h-4" />
-              Download PDF
-            </button>
-          </div>
-
-          <div id="test-content" className="space-y-8 p-4 bg-slate-900/50 rounded-2xl border border-white/5">
-            {/* MCQs Section */}
-            <div className="space-y-6">
-              <h5 className="text-sm font-orbitron font-bold text-white/50 uppercase tracking-widest border-b border-white/10 pb-2">Section A: MCQs (1 Mark Each)</h5>
-              {currentTest.mcqs?.map((q: any) => (
-                <div key={q.id} className="space-y-3">
-                  <p className="text-white font-rajdhani text-lg">{q.id}. {q.question}</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {q.options.map((opt: string) => (
-                      <button 
-                        key={opt}
-                        onClick={() => setTestAnswers({ ...testAnswers, [`mcq_${q.id}`]: opt })}
-                        className={`px-4 py-2 rounded-xl border font-rajdhani text-left transition-all ${testAnswers[`mcq_${q.id}`] === opt ? 'bg-cyber-pink/20 border-cyber-pink text-white selected-option' : 'bg-white/5 border-white/10 text-white/60 hover:border-white/30'}`}
-                      >
-                        {opt}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
+        <div className="flex-1 flex overflow-hidden">
+          {/* Main Question Panel */}
+          <div className="flex-1 flex flex-col bg-white border-r relative">
+            <div className="bg-slate-50 px-8 py-3 border-b flex justify-between items-center">
+                <h2 className="text-sm font-black text-slate-700 uppercase">Question No. {activeQuestion + 1}</h2>
+                <div className="p-1.5 bg-blue-100 rounded-full"><Info className="w-4 h-4 text-blue-600"/></div>
             </div>
-
-            {/* Short Questions Section */}
-            <div className="space-y-6">
-              <h5 className="text-sm font-orbitron font-bold text-white/50 uppercase tracking-widest border-b border-white/10 pb-2">Section B: Short Answer (2 Marks Each)</h5>
-              {currentTest.shortQuestions?.map((q: any) => (
-                <div key={q.id} className="space-y-3">
-                  <p className="text-white font-rajdhani text-lg">{q.id}. {q.question}</p>
-                  <textarea 
-                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl outline-none text-white font-rajdhani focus:border-cyber-pink/50 transition-all h-24"
-                    placeholder="Type your answer here..."
-                    value={testAnswers[`short_${q.id}`] || ''}
-                    onChange={(e) => setTestAnswers({ ...testAnswers, [`short_${q.id}`]: e.target.value })}
-                  />
-                </div>
-              ))}
-            </div>
-
-            {/* Long Question Section */}
-            <div className="space-y-6">
-              <h5 className="text-sm font-orbitron font-bold text-white/50 uppercase tracking-widest border-b border-white/10 pb-2">Section C: Long Answer (3 Marks)</h5>
-              <div className="space-y-3">
-                <p className="text-white font-rajdhani text-lg">{currentTest.longQuestion?.question}</p>
-                <textarea 
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl outline-none text-white font-rajdhani focus:border-cyber-pink/50 transition-all h-40"
-                  placeholder="Type your detailed answer here..."
-                  value={testAnswers.long || ''}
-                  onChange={(e) => setTestAnswers({ ...testAnswers, long: e.target.value })}
-                />
-              </div>
-            </div>
-          </div>
-
-          {!testResult ? (
-            <button 
-              onClick={handleSubmitTest}
-              disabled={isAiLoading}
-              className="w-full cyber-button bg-cyber-pink text-white font-orbitron font-black py-4 rounded-xl shadow-[0_0_20px_rgba(255,0,255,0.3)] hover:bg-white hover:text-black transition-all disabled:opacity-50 uppercase tracking-tighter"
-            >
-              {isAiLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Submit for Neural Evaluation'}
-            </button>
-          ) : (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="p-6 sm:p-8 bg-cyber-pink/10 border border-cyber-pink/30 rounded-3xl"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h5 className="text-xl font-orbitron font-black text-cyber-pink uppercase tracking-tighter">Evaluation Result</h5>
-                <span className="text-3xl font-orbitron font-black text-white">{testResult.score}</span>
-              </div>
-              <p className="text-white/80 font-rajdhani text-lg leading-relaxed">{testResult.feedback}</p>
-              <button 
-                onClick={() => { setTestResult(null); setTestAnswers({}); }}
-                className="mt-6 text-cyber-pink font-orbitron font-bold text-xs uppercase tracking-widest hover:underline"
-              >
-                Retake Another Test
-              </button>
-            </motion.div>
-          )}
-        </motion.div>
-      )}
-    </div>
-  );
-};
-
-const StudentDashboard = ({ 
-  currentUser, setCurrentUser, resources, notices, studentView, setStudentView, 
-  activeTab, setActiveTab, selectedSubjectFilter, setSelectedSubjectFilter, 
-  setSelectedResource, handleAiAsk, isAiLoading, aiPlan, setAiPlan, currentTest, setCurrentTest, testAnswers, setTestAnswers, testResult, setTestResult
-}: StudentDashboardProps) => {
-    const student = currentUser as UserData;
-    const studentSubjects = CLASS_SUBJECTS[student.class!] || [];
-    const filteredResources = resources.filter(r => 
-      r.className === student.class && 
-      r.type === activeTab && 
-      (!selectedSubjectFilter || r.subject === selectedSubjectFilter)
-    );
-
-    if (studentView === 'main') {
-      return (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-10 max-w-5xl mx-auto py-10 sm:py-20 px-4">
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setStudentView('school')}
-            className="glass-panel p-8 sm:p-12 rounded-[40px] border-2 border-cyber-blue/20 hover:border-cyber-blue transition-all flex flex-col items-center justify-center gap-6 group relative overflow-hidden h-[200px] sm:h-[300px]"
-          >
-            <div className="absolute inset-0 bg-cyber-blue/5 group-hover:bg-cyber-blue/10 transition-all" />
-            <div className="bg-cyber-blue/20 p-6 rounded-3xl border border-cyber-blue/40 shadow-[0_0_20px_rgba(0,243,255,0.2)] group-hover:shadow-[0_0_30px_rgba(0,243,255,0.4)] transition-all">
-              <GraduationCap className="w-12 h-12 sm:w-16 sm:h-16 text-cyber-blue" />
-            </div>
-            <h3 className="font-orbitron font-black text-white text-xl sm:text-3xl uppercase tracking-tighter neon-text">School Study</h3>
-          </motion.button>
-
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => { setStudentView('self-study'); setActiveTab('ai-plan'); }}
-            className="glass-panel p-8 sm:p-12 rounded-[40px] border-2 border-cyber-purple/20 hover:border-cyber-purple transition-all flex flex-col items-center justify-center gap-6 group relative overflow-hidden h-[200px] sm:h-[300px]"
-          >
-            <div className="absolute inset-0 bg-cyber-purple/5 group-hover:bg-cyber-purple/10 transition-all" />
-            <div className="bg-cyber-purple/20 p-6 rounded-3xl border border-cyber-purple/40 shadow-[0_0_20px_rgba(157,0,255,0.2)] group-hover:shadow-[0_0_30px_rgba(157,0,255,0.4)] transition-all">
-              <TrendingUp className="w-12 h-12 sm:w-16 sm:h-16 text-cyber-purple" />
-            </div>
-            <h3 className="font-orbitron font-black text-white text-xl sm:text-3xl uppercase tracking-tighter neon-text">Self Study</h3>
-          </motion.button>
-        </div>
-      );
-    }
-
-    if (studentView === 'self-study') {
-      return (
-        <div className="space-y-6 sm:space-y-8">
-          <div className="flex items-center justify-between">
-            <button onClick={() => setStudentView('main')} className="flex items-center gap-2 text-white/40 hover:text-cyber-purple transition-all font-orbitron font-bold text-xs uppercase tracking-widest">
-              <ChevronLeft className="w-4 h-4" /> Back to Portal
-            </button>
-            <h3 className="font-orbitron font-black text-white text-lg sm:text-xl uppercase tracking-tighter">Self Study - Shiksha AI</h3>
-          </div>
-
-          <div className="flex gap-4 border-b border-white/10 pb-4">
-            {[
-              { id: 'ai-plan', label: 'Study Plan', icon: TrendingUp },
-              { id: 'ai-test', label: 'Test Generator', icon: HelpCircle },
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-orbitron font-bold text-xs uppercase tracking-widest transition-all ${
-                  activeTab === tab.id 
-                    ? 'bg-cyber-purple text-white shadow-[0_0_15px_rgba(157,0,255,0.3)]' 
-                    : 'text-white/40 hover:text-white hover:bg-white/5'
-                }`}
-              >
-                <tab.icon className="w-4 h-4" />
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-8">
-            {activeTab === 'ai-plan' ? (
-              <StudyPlanView aiPlan={aiPlan} handleAiAsk={handleAiAsk} isAiLoading={isAiLoading} downloadPdf={downloadPdf} />
-            ) : (
-              <TestGeneratorView 
-                currentTest={currentTest} 
-                handleAiAsk={handleAiAsk} 
-                isAiLoading={isAiLoading}
-                testAnswers={testAnswers}
-                setTestAnswers={setTestAnswers}
-                testResult={testResult}
-                setTestResult={setTestResult}
-                downloadPdf={downloadPdf}
-              />
-            )}
-          </div>
-        </div>
-      );
-    }
-
-    if (studentView === 'school') {
-      return (
-        <div className="space-y-6 sm:space-y-8">
-          <div className="flex items-center justify-between">
-            <button onClick={() => setStudentView('main')} className="flex items-center gap-2 text-white/40 hover:text-cyber-blue transition-all font-orbitron font-bold text-xs uppercase tracking-widest">
-              <ChevronLeft className="w-4 h-4" /> Back to Portal
-            </button>
-            <h3 className="font-orbitron font-black text-white text-lg sm:text-xl uppercase tracking-tighter">School Study</h3>
-          </div>
-
-          <div className="max-w-2xl mx-auto space-y-4 sm:space-y-6">
-            <div className="grid grid-cols-2 gap-4 sm:gap-6">
-              {[
-                { id: 'video', label: 'Videos', icon: Video, color: 'bg-red-500/20 text-red-400' },
-                { id: 'note', label: 'Notes', icon: FileText, color: 'bg-cyber-blue/20 text-cyber-blue' },
-              ].map(box => (
-                <button
-                  key={box.id}
-                  onClick={() => setActiveTab(box.id as any)}
-                  className={`p-4 sm:p-8 rounded-3xl border transition-all flex flex-col items-center justify-center gap-2 sm:gap-4 ${activeTab === box.id ? 'border-cyber-blue bg-cyber-blue/10 shadow-[0_0_15px_rgba(0,243,255,0.2)]' : 'glass-panel border-white/10 hover:border-white/20'}`}
-                >
-                  <div className={`p-2 sm:p-4 rounded-xl sm:rounded-2xl ${box.color}`}>
-                    <box.icon className="w-6 h-6 sm:w-8 sm:h-8" />
-                  </div>
-                  <span className="font-orbitron font-bold text-white text-[10px] sm:text-sm uppercase tracking-wider">{box.label}</span>
-                </button>
-              ))}
-            </div>
-            <div className="grid grid-cols-2 gap-4 sm:gap-6">
-              {[
-                { id: 'question', label: 'Practice', icon: HelpCircle, color: 'bg-amber-500/20 text-amber-400' },
-                { id: 'notice', label: 'Notices', icon: AlertCircle, color: 'bg-cyber-purple/20 text-cyber-purple' },
-              ].map(box => (
-                <button
-                  key={box.id}
-                  onClick={() => setActiveTab(box.id as any)}
-                  className={`p-4 sm:p-8 rounded-3xl border transition-all flex flex-col items-center justify-center gap-2 sm:gap-4 ${activeTab === box.id ? 'border-cyber-blue bg-cyber-blue/10 shadow-[0_0_15px_rgba(0,243,255,0.2)]' : 'glass-panel border-white/10 hover:border-white/20'}`}
-                >
-                  <div className={`p-2 sm:p-4 rounded-xl sm:rounded-2xl ${box.color}`}>
-                    <box.icon className="w-6 h-6 sm:w-8 sm:h-8" />
-                  </div>
-                  <span className="font-orbitron font-bold text-white text-[10px] sm:text-sm uppercase tracking-wider">{box.label}</span>
-                </button>
-              ))}
-            </div>
-            <div className="flex justify-center">
-              {[
-                { id: 'profile', label: 'Profile', icon: User, color: 'bg-emerald-500/20 text-emerald-400' },
-              ].map(box => (
-                <button
-                  key={box.id}
-                  onClick={() => setActiveTab(box.id as any)}
-                  className={`w-1/2 p-4 sm:p-8 rounded-3xl border transition-all flex flex-col items-center justify-center gap-2 sm:gap-4 ${activeTab === box.id ? 'border-cyber-blue bg-cyber-blue/10 shadow-[0_0_15px_rgba(0,243,255,0.2)]' : 'glass-panel border-white/10 hover:border-white/20'}`}
-                >
-                  <div className={`p-2 sm:p-4 rounded-xl sm:rounded-2xl ${box.color}`}>
-                    <box.icon className="w-6 h-6 sm:w-8 sm:h-8" />
-                  </div>
-                  <span className="font-orbitron font-bold text-white text-[10px] sm:text-sm uppercase tracking-wider">{box.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-12">
-            {activeTab === 'profile' ? (
-              <ProfileSection 
-                currentUser={currentUser}
-                setCurrentUser={setCurrentUser}
-                resources={resources}
-                setEditingResource={() => {}}
-                setResourceForm={() => {}}
-                setShowResourceForm={() => {}}
-                handleDeleteResource={() => {}}
-                setSelectedResource={setSelectedResource}
-              />
-            ) : activeTab === 'notice' ? (
-              <div className="space-y-6">
-                <h3 className="text-lg sm:text-xl font-orbitron font-black text-white tracking-tighter uppercase">Notices & Updates</h3>
-                <div className="grid grid-cols-1 gap-4">
-                  {notices.filter(n => n.type === 'school' || n.subject === selectedSubjectFilter || n.subject === 'All Subjects' || n.className === 'All Classes' || n.className === student.class).map(n => (
-                    <NoticeCard key={n.id} notice={n} />
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                <div className="flex gap-2 sm:gap-3 overflow-x-auto pb-2 no-scrollbar">
+            
+            <div className="flex-1 p-10 overflow-y-auto">
+              <div className="text-lg font-bold text-slate-800 leading-relaxed mb-12 select-none">{currentQ?.question}</div>
+              <div className="grid grid-cols-1 gap-5">
+                {currentQ?.options.map((opt: string, i: number) => (
                   <button 
-                    onClick={() => setSelectedSubjectFilter(null)}
-                    className={`px-4 sm:px-6 py-2 rounded-full text-[10px] sm:text-sm font-orbitron font-bold whitespace-nowrap transition-all uppercase tracking-wider ${!selectedSubjectFilter ? 'bg-cyber-blue text-black shadow-[0_0_10px_rgba(0,243,255,0.3)]' : 'bg-white/5 text-white/40 border border-white/10'}`}
+                    key={i} 
+                    onClick={() => setCuetAnswers({...cuetAnswers, [activeQuestion]: i.toString()})} 
+                    className={`group flex items-center gap-5 p-5 rounded-2xl border-2 text-left transition-all relative overflow-hidden ${cuetAnswers[activeQuestion] === i.toString() ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-slate-100 hover:border-slate-300'}`}
                   >
-                    All Subjects
+                    <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center font-black text-sm shrink-0 transition-colors ${cuetAnswers[activeQuestion] === i.toString() ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'text-slate-400'}`}>({i+1})</div>
+                    <span className={`text-sm font-bold transition-colors ${cuetAnswers[activeQuestion] === i.toString() ? 'text-blue-900' : 'text-slate-600'}`}>{opt}</span>
+                    {cuetAnswers[activeQuestion] === i.toString() && <div className="absolute right-4 top-1/2 -translate-y-1/2"><CheckCircle2 className="w-6 h-6 text-blue-600" /></div>}
                   </button>
-                  {studentSubjects.map(sub => (
-                    <button 
-                      key={sub}
-                      onClick={() => setSelectedSubjectFilter(sub)}
-                      className={`px-4 sm:px-6 py-2 rounded-full text-[10px] sm:text-sm font-orbitron font-bold whitespace-nowrap transition-all uppercase tracking-wider ${selectedSubjectFilter === sub ? 'bg-cyber-blue text-black shadow-[0_0_10px_rgba(0,243,255,0.3)]' : 'bg-white/5 text-white/40 border border-white/10'}`}
-                    >
-                      {sub}
-                    </button>
-                  ))}
+                ))}
+              </div>
+            </div>
+
+            {/* Action Bar from Reference Image */}
+            <div className="bg-slate-50 border-t p-6 flex flex-wrap gap-4 items-center">
+                <button onClick={() => handleAction('save')} className="bg-[#4caf50] text-white px-6 py-3 rounded-lg font-black text-[11px] uppercase tracking-tighter hover:brightness-110 active:scale-95 transition-all shadow-md">SAVE & NEXT</button>
+                <button onClick={() => handleAction('save-mark')} className="bg-[#ff9800] text-white px-6 py-3 rounded-lg font-black text-[11px] uppercase tracking-tighter hover:brightness-110 active:scale-95 transition-all shadow-md">SAVE & MARK FOR REVIEW</button>
+                <button onClick={() => handleAction('clear')} className="bg-white border-2 border-slate-300 text-slate-700 px-6 py-3 rounded-lg font-black text-[11px] uppercase tracking-tighter hover:bg-slate-100 active:scale-95 transition-all shadow-sm">CLEAR RESPONSE</button>
+                <button onClick={() => handleAction('mark')} className="bg-[#03a9f4] text-white px-6 py-3 rounded-lg font-black text-[11px] uppercase tracking-tighter hover:brightness-110 active:scale-95 transition-all shadow-md">MARK FOR REVIEW & NEXT</button>
+            </div>
+
+            {/* Fixed Bottom Navigation */}
+            <div className="bg-white border-t p-4 flex justify-between items-center shadow-[0_-4px_10px_rgba(0,0,0,0.05)]">
+                <div className="flex gap-3">
+                    <button onClick={() => setActiveQuestion(prev => Math.max(0, prev - 1))} className="px-8 py-2.5 border-2 border-slate-400 rounded-lg font-black text-xs uppercase hover:bg-slate-100 transition-all">&lt;&lt; BACK</button>
+                    <button onClick={() => setActiveQuestion(prev => Math.min(cuetQuestions.length - 1, prev + 1))} className="px-8 py-2.5 bg-slate-800 text-white rounded-lg font-black text-xs uppercase hover:bg-black transition-all">NEXT &gt;&gt;</button>
+                </div>
+                <button onClick={() => window.confirm('Final Submit?') && handleFinishExam()} className="bg-[#2e7d32] text-white px-10 py-2.5 rounded-lg font-black text-xs uppercase shadow-xl hover:brightness-110 transition-all">SUBMIT</button>
+            </div>
+          </div>
+
+          {/* Right Palette Panel */}
+          <div className="w-full sm:w-[360px] bg-white flex flex-col p-6 overflow-y-auto">
+            <div className="flex flex-col gap-8">
+                {/* Status Guide */}
+                <div className="grid grid-cols-2 gap-y-4 gap-x-2 p-4 bg-slate-50 border rounded-2xl">
+                    <StatusBadge type="not-visited" count={counts['not-visited']} label="Not Visited" />
+                    <StatusBadge type="not-answered" count={counts['not-answered']} label="Not Answered" />
+                    <StatusBadge type="answered" count={counts['answered']} label="Answered" />
+                    <StatusBadge type="marked" count={counts['marked']} label="Marked Review" />
+                    <div className="col-span-2">
+                        <StatusBadge type="answered-marked" count={counts['answered-marked']} label="Ans & Marked Review (evaluated)" />
+                    </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                  {filteredResources.map(res => (
-                    <ResourceCard key={res.id} resource={res} setSelectedResource={setSelectedResource} />
-                  ))}
-                  {filteredResources.length === 0 && (
-                    <div className="col-span-full py-12 sm:py-20 text-center glass-panel rounded-3xl border border-dashed border-white/10">
-                      <Search className="w-10 h-10 sm:w-12 sm:h-12 text-white/20 mx-auto mb-4" />
-                      <p className="text-white/40 font-orbitron font-bold text-xs sm:text-sm uppercase tracking-widest">No resources found for this subject.</p>
+                {/* Candidate Sidebar Profile Style */}
+                <div className="flex items-center gap-4 p-4 border rounded-2xl bg-gradient-to-r from-blue-50 to-white">
+                    <div className="w-12 h-12 bg-slate-200 rounded-lg flex items-center justify-center p-1 border overflow-hidden">
+                        <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=pallavi" alt="Profile" />
                     </div>
-                  )}
+                    <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase">Roll No.</p>
+                        <p className="text-xs font-black text-slate-800">2026-X7Y-922</p>
+                    </div>
                 </div>
-              </div>
-            )}
+
+                {/* Palette */}
+                <div className="bg-blue-600 px-4 py-2 rounded-t-xl text-white font-black text-[11px] uppercase tracking-wider text-center">Question Palette</div>
+                <div className="bg-slate-50 border p-5 rounded-b-2xl shadow-inner max-h-[400px] overflow-y-auto">
+                    <div className="grid grid-cols-5 gap-3">
+                        {cuetQuestions.map((_: any, i: number) => {
+                            const status = cuetStatusMap[i] || 'not-visited';
+                            const shapes: any = {
+                                'not-visited': 'bg-white border text-slate-900 rounded',
+                                'not-answered': 'bg-red-500 text-white rounded-t-3xl rounded-b-lg',
+                                'answered': 'bg-green-600 text-white rounded-b-3xl rounded-t-lg',
+                                'marked': 'bg-indigo-600 text-white rounded-full',
+                                'answered-marked': 'bg-indigo-600 text-white rounded-full relative after:content-[""] after:absolute after:bottom-0 after:right-0 after:w-3 after:h-3 after:bg-green-500 after:rounded-full after:border-2 after:border-white'
+                            };
+                            return (
+                                <button 
+                                    key={i} 
+                                    onClick={() => setActiveQuestion(i)} 
+                                    className={`h-10 w-10 flex items-center justify-center font-bold text-xs transition-all hover:scale-110 active:scale-90 ${shapes[status]} ${activeQuestion === i ? 'ring-2 ring-blue-400 ring-offset-2' : ''}`}
+                                >
+                                    {i+1}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            </div>
+
+            <div className="mt-8 bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-center gap-3">
+                <Info className="w-5 h-5 text-blue-600 shrink-0" />
+                <p className="text-[9px] font-bold text-blue-800 leading-tight italic uppercase">Candidate is advised to frequently Refresh the portal if question lag occurs.</p>
+            </div>
           </div>
         </div>
-      );
-    }
-    return null;
-};
-
-const DashboardView = ({ 
-  currentUser, 
-  setCurrentUser,
-  handleLogout, 
-  showResourceForm, 
-  setShowResourceForm, 
-  showNoticeForm, 
-  setShowNoticeForm, 
-  users, 
-  resources, 
-  notices, 
-  handleDeleteUser, 
-  handleDeleteResource, 
-  handleDeleteNotice, 
-  studentView, 
-  setStudentView, 
-  activeTab, 
-  setActiveTab, 
-  selectedSubjectFilter, 
-  setSelectedSubjectFilter, 
-  onSelectResource, 
-  adminUserTab, 
-  setAdminUserTab,
-  setSelectedResource,
-  setEditingResource,
-  setResourceForm,
-  setShowAiHelper,
-  handleAiAsk,
-  isAiLoading,
-  aiPlan,
-  setAiPlan,
-  currentTest,
-  setCurrentTest,
-  testAnswers,
-  setTestAnswers,
-  testResult,
-  setTestResult,
-  handlePromoteAllStudents
-}: DashboardViewProps) => (
-  <div className="min-h-screen flex flex-col font-space relative overflow-hidden">
-    <CyberBackground />
-    {currentUser?.role === 'student' && (
-      <motion.button
-        whileHover={{ scale: 1.1, rotate: 5 }}
-        whileTap={{ scale: 0.9 }}
-        onClick={() => setShowAiHelper(true)}
-        className="fixed bottom-6 right-6 z-50 bg-cyber-blue p-4 rounded-2xl shadow-[0_0_20px_rgba(0,243,255,0.4)] group"
-      >
-        <MessageSquare className="w-6 h-6 text-black" />
-        <div className="absolute bottom-full right-0 mb-4 bg-cyber-blue text-black font-orbitron font-black text-[10px] px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all whitespace-nowrap uppercase tracking-tighter">
-          Siksha AI Helper
-        </div>
-      </motion.button>
-    )}
-    <nav className="glass-panel border-b border-white/10 px-4 py-3 sm:px-6 sm:py-4 flex justify-between items-center sticky top-0 z-30">
-      <div className="flex items-center gap-3">
-        <div className="bg-cyber-blue/20 p-2 rounded-xl border border-cyber-blue/40 shadow-[0_0_10px_rgba(0,243,255,0.2)]">
-          <GraduationCap className="text-cyber-blue w-5 h-5 sm:w-6 sm:h-6" />
-        </div>
-        <div>
-          <h2 className="font-orbitron font-black text-white leading-tight uppercase tracking-tighter text-lg sm:text-2xl neon-text">EDUHUB</h2>
-          <p className="text-[8px] sm:text-[10px] font-rajdhani font-bold text-cyber-blue/60 uppercase tracking-widest">{currentUser?.role}</p>
-        </div>
       </div>
-      <div className="flex items-center gap-4">
-        <div className="hidden md:block text-right">
-          <p className="text-sm font-orbitron font-bold text-white uppercase tracking-wider">{currentUser?.name}</p>
-          <p className="text-[10px] font-rajdhani font-bold text-white/40 uppercase tracking-widest">{currentUser?.studentId || currentUser?.teacherId || currentUser?.email}</p>
+    );
+  }
+
+  if (cuetStatus === 'finished') {
+    return (
+        <div className="max-w-2xl mx-auto py-20 px-4">
+            <div className="text-center space-y-6">
+                <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring' }} className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto shadow-lg border-4 border-white">
+                    <CheckCircle2 className="w-12 h-12 text-green-600" />
+                </motion.div>
+                <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">Evaluation Report Generated</h2>
+                
+                <div className="bg-white shadow-2xl p-10 rounded-[40px] border border-slate-100 text-center relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-green-500" />
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Final Corrected Score</p>
+                    <span className="text-7xl font-black text-slate-900 tracking-tighter">{cuetResult?.score}</span>
+                    <p className="text-slate-400 font-bold uppercase text-[10px] mt-2 tracking-widest">Out of {cuetResult?.total}</p>
+
+                    <div className="grid grid-cols-3 gap-6 mt-12">
+                        <div className="bg-green-50 p-6 rounded-3xl border border-green-100">
+                             <p className="text-[10px] text-green-600 uppercase font-black mb-1">Correct</p>
+                             <p className="text-2xl font-black text-green-700">{cuetResult?.correct}</p>
+                        </div>
+                        <div className="bg-red-50 p-6 rounded-3xl border border-red-100">
+                             <p className="text-[10px] text-red-600 uppercase font-black mb-1">Incorrect</p>
+                             <p className="text-2xl font-black text-red-700">{cuetResult?.incorrect}</p>
+                        </div>
+                        <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                             <p className="text-[10px] text-slate-600 uppercase font-black mb-1">Left</p>
+                             <p className="text-2xl font-black text-slate-700">{cuetResult?.unattempted}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex gap-4">
+                    <button onClick={() => window.print()} className="flex-1 bg-white border-2 border-slate-200 text-slate-700 font-black py-4 rounded-2xl uppercase shadow-md hover:bg-slate-50 transition-all flex items-center justify-center gap-2"><Download className="w-5 h-5"/> Save Report</button>
+                    <button onClick={() => setCuetStatus('upload')} className="flex-1 bg-slate-900 text-white font-black py-4 rounded-2xl uppercase shadow-xl hover:bg-black transition-all">New Practice Session</button>
+                </div>
+            </div>
         </div>
-        <button onClick={handleLogout} className="p-2.5 text-white/40 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all border border-transparent hover:border-red-500/20">
-          <LogOut className="w-5 h-5" />
-        </button>
-      </div>
-    </nav>
-
-    <main className="max-w-7xl mx-auto p-4 sm:p-6 flex-1">
-      {currentUser?.role === 'main-admin' && (
-        <MainAdminDashboard 
-          currentUser={currentUser}
-          setCurrentUser={setCurrentUser}
-          users={users}
-          resources={resources}
-          notices={notices}
-          handleDeleteUser={handleDeleteUser}
-          handleDeleteResource={handleDeleteResource}
-          handleDeleteNotice={handleDeleteNotice}
-          setShowResourceForm={setShowResourceForm}
-          setShowNoticeForm={setShowNoticeForm}
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          adminUserTab={adminUserTab}
-          setAdminUserTab={setAdminUserTab}
-          setSelectedResource={setSelectedResource}
-          setEditingResource={setEditingResource}
-          setResourceForm={setResourceForm}
-          handlePromoteAllStudents={handlePromoteAllStudents}
-        />
-      )}
-      {currentUser?.role === 'teacher' && (
-        <TeacherDashboard 
-          currentUser={currentUser}
-          setCurrentUser={setCurrentUser}
-          resources={resources}
-          notices={notices}
-          handleDeleteResource={handleDeleteResource}
-          handleDeleteNotice={handleDeleteNotice}
-          setShowResourceForm={setShowResourceForm}
-          setShowNoticeForm={setShowNoticeForm}
-          setSelectedResource={setSelectedResource}
-          setEditingResource={setEditingResource}
-          setResourceForm={setResourceForm}
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-        />
-      )}
-      {currentUser?.role === 'student' && (
-        <StudentDashboard 
-          currentUser={currentUser}
-          resources={resources}
-          notices={notices}
-          studentView={studentView}
-          setStudentView={setStudentView}
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          selectedSubjectFilter={selectedSubjectFilter}
-          setSelectedSubjectFilter={setSelectedSubjectFilter}
-          setSelectedResource={setSelectedResource}
-          setCurrentUser={setCurrentUser}
-          handleAiAsk={handleAiAsk}
-          isAiLoading={isAiLoading}
-          aiPlan={aiPlan}
-          setAiPlan={setAiPlan}
-          currentTest={currentTest}
-          setCurrentTest={setCurrentTest}
-          testAnswers={testAnswers}
-          setTestAnswers={setTestAnswers}
-          testResult={testResult}
-          setTestResult={setTestResult}
-        />
-      )}
-    </main>
-  </div>
-);
-
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 selection:bg-cyber-blue/30 selection:text-cyber-blue">
-      <AnimatePresence mode="wait">
-        {view === 'login' && (
-          <motion.div key="login" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <LoginView 
-              handleLogin={handleLogin}
-              isUploading={isUploading}
-              setView={setView}
-              setSignupType={setSignupType}
-            />
-          </motion.div>
-        )}
-        {view === 'signup' && (
-          <motion.div key="signup" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <SignupView 
-              handleSignup={handleSignup}
-              setView={setView}
-              signupType={signupType}
-              isUploading={isUploading}
-            />
-          </motion.div>
-        )}
-        {view === 'dashboard' && (
-          <motion.div key="dashboard" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <DashboardView 
-              currentUser={currentUser}
-              setCurrentUser={setCurrentUser}
-              handleLogout={handleLogout}
-              showResourceForm={showResourceForm}
-              setShowResourceForm={setShowResourceForm}
-              showNoticeForm={showNoticeForm}
-              setShowNoticeForm={setShowNoticeForm}
-              users={allUsers}
-              resources={resources}
-              notices={notices}
-              handleDeleteUser={async (id) => {
-                if (window.confirm('Delete this user?')) {
-                  await deleteDoc(doc(db, 'users', id));
-                }
-              }}
-              handleDeleteResource={handleDeleteResource}
-              handleDeleteNotice={async (id) => {
-                if (window.confirm('Delete this notice?')) {
-                  await deleteDoc(doc(db, 'notices', id));
-                }
-              }}
-              studentView={studentView}
-              setStudentView={setStudentView}
-              activeTab={activeTab}
-              setActiveTab={setActiveTab}
-              selectedSubjectFilter={selectedSubjectFilter}
-              setSelectedSubjectFilter={setSelectedSubjectFilter}
-              onSelectResource={(res) => setSelectedResource(res)}
-              adminUserTab={adminUserTab}
-              setAdminUserTab={setAdminUserTab}
-              setSelectedResource={setSelectedResource}
-              setEditingResource={setEditingResource}
-              setResourceForm={setResourceForm}
-              setShowAiHelper={setShowAiHelper}
-              handleAiAsk={handleAiAsk}
-              isAiLoading={isAiLoading}
-              aiPlan={aiPlan}
-              setAiPlan={setAiPlan}
-              currentTest={currentTest}
-              setCurrentTest={setCurrentTest}
-              testAnswers={testAnswers}
-              setTestAnswers={setTestAnswers}
-              testResult={testResult}
-              setTestResult={setTestResult}
-              handlePromoteAllStudents={handlePromoteAllStudents}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Global Modals */}
-      <AnimatePresence>
-        {showAiHelper && (
-          <AiHelperModal 
-            onClose={() => setShowAiHelper(false)}
-            chatMessages={chatMessages}
-            aiInput={aiInput}
-            setAiInput={setAiInput}
-            handleAiAsk={handleAiAsk}
-            isAiLoading={isAiLoading}
-            chatEndRef={chatEndRef}
-          />
-        )}
-        {selectedResource && (
-          <ResourceModal resource={selectedResource} onClose={() => setSelectedResource(null)} />
-        )}
-        {selectedNotice && (
-          <NoticeModal notice={selectedNotice} onClose={() => setSelectedNotice(null)} />
-        )}
-        {showResourceForm && (
-          <ResourceForm 
-            onClose={() => { setShowResourceForm(false); setEditingResource(null); }} 
-            resourceForm={resourceForm}
-            setResourceForm={setResourceForm}
-            handleAddResource={handleAddResource}
-            isUploading={isUploading}
-            selectedFile={selectedFile}
-            setSelectedFile={setSelectedFile}
-            editingResource={editingResource}
-            currentUser={currentUser}
-          />
-        )}
-        {showNoticeForm && (
-          <NoticeForm 
-            onClose={() => setShowNoticeForm(false)} 
-            noticeForm={noticeForm}
-            setNoticeForm={setNoticeForm}
-            handleAddNotice={handleAddNotice}
-            isUploading={isUploading}
-            selectedFile={selectedFile}
-            setSelectedFile={setSelectedFile}
-            currentUser={currentUser}
-          />
-        )}
-      </AnimatePresence>
-
-      <footer className="py-10 text-center border-t border-white/5 mt-auto">
-        <p className="text-[10px] font-rajdhani font-bold text-white/40 uppercase tracking-widest">
-          © edu hub india 2026 || Designed & Developed by SHUBHJEET RAM TRIPATHI with 🩷
-        </p>
-      </footer>
-    </div>
-  );
+    );
+  }
+  return null;
 };
 
 const App: React.FC = () => (
@@ -3226,3 +1929,4 @@ if (rootElement) {
 }
 
 export default App;
+

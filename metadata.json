@@ -1,5 +1,5 @@
 {
-  "name": "EduHub: Admin & Student Portal",
-  "description": "A comprehensive educational platform with an admin portal for resource management and a student portal.",
+  "name": "CUET 2026 Prediction & Practice Hub",
+  "description": "Professional CUET examination simulation center with AI-powered question extraction from images, proctored environment, and NTA-styled practice dashboard.",
   "requestFramePermissions": []
 }
