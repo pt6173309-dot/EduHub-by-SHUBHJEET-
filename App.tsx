@@ -1334,80 +1334,65 @@ const AppContent: React.FC = () => {
   // Auto-fill candidate name
   const candidateName = "PALLAVI";
 
-  const handleCuetTextUpload = (pastedText: string) => {
+  const handleCuetTextUpload = async (pastedText: string) => {
+    const apiKey = process.env.GEMINI_API_KEY || (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY);
+    
+    if (!apiKey) {
+      alert("AI Service is currently unavailable. Please ensure GEMINI_API_KEY is set.");
+      return;
+    }
+
     if (!pastedText.trim()) {
       alert("Please paste some text first.");
       return;
     }
 
-    const sections = pastedText.split(/\n\s*\n/);
-    const extractedQuestions: any[] = [];
-
-    sections.forEach(section => {
-      const lines = section.split('\n').map(l => l.trim()).filter(l => l !== '');
-      if (lines.length < 2) return;
-
-      let questionText = '';
-      const options: string[] = [];
-      let detectedCorrect = 0;
+    setIsAiLoading(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `Extract all multiple choice questions from the following text. 
+      The text may contain up to 50 or more questions. Ensure you find ALL of them.
+      Format each question as an object with:
+      1. question: the full text of the question
+      2. options: an array of EXACTLY 4 strings (fill with placeholders if fewer than 4 are found)
+      3. correct: the index (0-3) of the correct answer based on the content (if marked with * or "(correct)")
       
-      lines.forEach(line => {
-        const optMatch = line.match(/^(\*?\s*)([A-Da-d][\.\)]|[A-D]:|\([A-Da-d]\))/);
-        if (optMatch) {
-          const optContent = line.replace(optMatch[0], '').trim();
-          if (line.includes('*') || line.toLowerCase().includes('(correct)')) {
-            detectedCorrect = options.length;
-          }
-          options.push(optContent.replace(/\(correct\)/i, '').trim());
-        } else {
-          if (options.length === 0) {
-            questionText += (questionText ? '\n' : '') + line;
-          }
-        }
-      });
+      Text to process:
+      ${pastedText}
+      
+      Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "correct": 0}]. If no questions are found, return [].`;
 
-      if (questionText && options.length >= 2) {
-        extractedQuestions.push({
-          question: questionText,
-          options: options.slice(0, 4),
-          correct: detectedCorrect
-        });
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: [{ parts: [{ text: prompt }] }],
+      });
+      const text = response.text;
+      
+      if (!text) {
+        alert("AI returned an empty response. Please try again.");
+        return;
       }
-    });
-
-    if (extractedQuestions.length === 0) {
-      // Fallback for non-spaced questions
-      const allLines = pastedText.split('\n').filter(l => l.trim() !== '');
-      let q: any = null;
-      allLines.forEach(line => {
-        const trimmed = line.trim();
-        const qMatch = trimmed.match(/^(\d+[\.\)]|Q\d+|Question\s*\d+)/i);
-        const oMatch = trimmed.match(/^(\*?\s*)([A-Da-d][\.\)]|[A-D]:|\([A-Da-d]\))/);
-        
-        if (qMatch) {
-          if (q && q.options.length >= 2) extractedQuestions.push(q);
-          q = { question: trimmed.replace(qMatch[0], '').trim(), options: [], correct: 0 };
-        } else if (oMatch && q) {
-          const optContent = trimmed.replace(oMatch[0], '').trim();
-          if (trimmed.includes('*') || trimmed.toLowerCase().includes('(correct)')) {
-            q.correct = q.options.length;
-          }
-          q.options.push(optContent.replace(/\(correct\)/i, '').trim());
-        } else if (q) {
-          if (q.options.length === 0) q.question += '\n' + trimmed;
+      
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        const extractedQuestions = JSON.parse(jsonMatch[0]);
+        if (extractedQuestions.length > 0) {
+          setCuetQuestions(extractedQuestions);
+          setCuetStatus('instructions');
+          setCuetAnswers({});
+          setCuetStatusMap({});
+          setCuetTimeLeft(3600);
+        } else {
+          alert("AI couldn't find any questions in the text provided. Please check the format.");
         }
-      });
-      if (q && q.options.length >= 2) extractedQuestions.push(q);
-    }
-
-    if (extractedQuestions.length > 0) {
-      setCuetQuestions(extractedQuestions);
-      setCuetStatus('instructions');
-      setCuetAnswers({});
-      setCuetStatusMap({});
-      setCuetTimeLeft(3600);
-    } else {
-      alert("No questions detected. Use format:\n\n1. Question text?\nA) Opt 1\nB) Opt 2...");
+      } else {
+        alert("Found issue parsing AI response. Please try again.");
+      }
+    } catch (error: any) {
+      console.error('CUET Text Extraction Error:', error);
+      alert('Failed to process text: ' + (error.message || 'Unknown error'));
+    } finally {
+      setIsAiLoading(false);
     }
   };
 
@@ -1778,15 +1763,24 @@ const CUETExamView = ({
           
           <button 
             onClick={() => handleCuetTextUpload(pastedText)}
-            disabled={!pastedText.trim()}
+            disabled={isAiLoading || !pastedText.trim()}
             className="w-full bg-blue-600 text-white font-black py-5 rounded-2xl uppercase tracking-tighter text-xl shadow-xl hover:bg-blue-700 active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-50"
           >
-            <Zap className="w-6 h-6" />
-            START SIMULATION
+            {isAiLoading ? (
+              <>
+                <Loader2 className="w-6 h-6 animate-spin" />
+                NEURAL ANALYSIS IN PROGRESS...
+              </>
+            ) : (
+              <>
+                <Zap className="w-6 h-6" />
+                START SIMULATION
+              </>
+            )}
           </button>
           
           <div className="text-center">
-            <p className="text-slate-400 text-[10px] font-bold uppercase">Manual text parsing mode active (Instant)</p>
+            <p className="text-slate-400 text-[10px] font-bold uppercase">AI will automatically identify questions, options, and answers</p>
           </div>
         </div>
         <div className="bg-amber-50 p-8 rounded-3xl border border-amber-100 space-y-3">
