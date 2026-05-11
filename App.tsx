@@ -1349,11 +1349,16 @@ const AppContent: React.FC = () => {
 
       let questionText = '';
       const options: string[] = [];
+      let detectedCorrect = 0;
       
       lines.forEach(line => {
-        const optMatch = line.match(/^([A-Da-d][\.\)]|[A-D]:|\([A-Da-d]\))/);
+        const optMatch = line.match(/^(\*?\s*)([A-Da-d][\.\)]|[A-D]:|\([A-Da-d]\))/);
         if (optMatch) {
-          options.push(line.replace(optMatch[0], '').trim());
+          const optContent = line.replace(optMatch[0], '').trim();
+          if (line.includes('*') || line.toLowerCase().includes('(correct)')) {
+            detectedCorrect = options.length;
+          }
+          options.push(optContent.replace(/\(correct\)/i, '').trim());
         } else {
           if (options.length === 0) {
             questionText += (questionText ? '\n' : '') + line;
@@ -1365,7 +1370,7 @@ const AppContent: React.FC = () => {
         extractedQuestions.push({
           question: questionText,
           options: options.slice(0, 4),
-          correct: 0 // Default to first for manual mode
+          correct: detectedCorrect
         });
       }
     });
@@ -1377,13 +1382,17 @@ const AppContent: React.FC = () => {
       allLines.forEach(line => {
         const trimmed = line.trim();
         const qMatch = trimmed.match(/^(\d+[\.\)]|Q\d+|Question\s*\d+)/i);
-        const oMatch = trimmed.match(/^([A-Da-d][\.\)]|[A-D]:|\([A-Da-d]\))/);
+        const oMatch = trimmed.match(/^(\*?\s*)([A-Da-d][\.\)]|[A-D]:|\([A-Da-d]\))/);
         
         if (qMatch) {
           if (q && q.options.length >= 2) extractedQuestions.push(q);
           q = { question: trimmed.replace(qMatch[0], '').trim(), options: [], correct: 0 };
         } else if (oMatch && q) {
-          q.options.push(trimmed.replace(oMatch[0], '').trim());
+          const optContent = trimmed.replace(oMatch[0], '').trim();
+          if (trimmed.includes('*') || trimmed.toLowerCase().includes('(correct)')) {
+            q.correct = q.options.length;
+          }
+          q.options.push(optContent.replace(/\(correct\)/i, '').trim());
         } else if (q) {
           if (q.options.length === 0) q.question += '\n' + trimmed;
         }
@@ -1569,14 +1578,134 @@ const CUETExamView = ({
     let correct = 0;
     let incorrect = 0;
     let unattempted = 0;
-    cuetQuestions.forEach((q: any, idx: number) => {
-      const ans = cuetAnswers[idx];
-      if (ans === undefined) unattempted++;
-      else if (parseInt(ans) === q.correct) { score += 5; correct++; }
+    
+    const detailedResults = cuetQuestions.map((q: any, idx: number) => {
+      const selected = cuetAnswers[idx];
+      const selectedIdx = selected !== undefined ? parseInt(selected) : -1;
+      const isCorrect = selectedIdx === q.correct;
+      
+      if (selected === undefined) unattempted++;
+      else if (isCorrect) { score += 5; correct++; }
       else { score -= 1; incorrect++; }
+
+      return {
+        ...q,
+        selectedIdx,
+        isCorrect
+      };
     });
-    setCuetResult({ score, correct, incorrect, unattempted, total: cuetQuestions.length * 5 });
+
+    setCuetResult({ 
+      score, 
+      correct, 
+      incorrect, 
+      unattempted, 
+      total: cuetQuestions.length * 5,
+      details: detailedResults
+    });
     setCuetStatus('finished');
+  };
+
+  const downloadDetailedPDF = async () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    let y = 20;
+
+    // Header
+    doc.setFontSize(22);
+    doc.setTextColor(0, 51, 153);
+    doc.text("CUET 2026 PRACTICE PORTAL", pageWidth / 2, y, { align: 'center' });
+    y += 10;
+    doc.setFontSize(14);
+    doc.setTextColor(100);
+    doc.text("EXAMINATION PERFORMANCE REPORT", pageWidth / 2, y, { align: 'center' });
+    y += 15;
+
+    // Candidate Info
+    doc.setDrawColor(200);
+    doc.line(15, y, pageWidth - 15, y);
+    y += 10;
+    doc.setFontSize(10);
+    doc.setTextColor(0);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Candidate Name: ${currentUser?.name || "PALLAVI"}`, 20, y);
+    doc.text(`Exam ID: CUET2026-X7Y`, 150, y);
+    y += 10;
+    doc.text(`Total Score: ${cuetResult?.score} / ${cuetResult?.total}`, 20, y);
+    doc.text(`Date: ${new Date().toLocaleDateString()}`, 150, y);
+    y += 10;
+    doc.line(15, y, pageWidth - 15, y);
+    y += 15;
+
+    // Results Summary
+    doc.setFontSize(12);
+    doc.text("SUMMARY STATISTICS", 20, y);
+    y += 10;
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(`- Correct Answers: ${cuetResult?.correct}`, 25, y);
+    y += 7;
+    doc.text(`- Incorrect Answers: ${cuetResult?.incorrect}`, 25, y);
+    y += 7;
+    doc.text(`- Unattempted: ${cuetResult?.unattempted}`, 25, y);
+    y += 15;
+
+    // Detailed Report Title
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.text("QUESTION-BY-QUESTION ANALYSIS (A-Z REPORT)", 20, y);
+    y += 10;
+
+    // Questions
+    doc.setFontSize(9);
+    (cuetResult?.details || []).forEach((item: any, index: number) => {
+      if (y > 270) {
+        doc.addPage();
+        y = 20;
+      }
+
+      doc.setFont("helvetica", "bold");
+      const questionLines = doc.splitTextToSize(`${index + 1}. ${item.question}`, pageWidth - 40);
+      doc.text(questionLines, 20, y);
+      y += (questionLines.length * 5) + 2;
+
+      item.options.forEach((opt: string, optIdx: number) => {
+        const prefix = String.fromCharCode(65 + optIdx) + ") ";
+        let color = [0, 0, 0];
+        let style = "normal";
+
+        if (optIdx === item.correct) {
+          color = [0, 153, 51]; // Green for correct
+          style = "bold";
+        }
+        
+        doc.setTextColor(color[0], color[1], color[2]);
+        doc.setFont("helvetica", style);
+        const optLines = doc.splitTextToSize(`${prefix}${opt}`, pageWidth - 50);
+        doc.text(optLines, 25, y);
+        y += (optLines.length * 5);
+      });
+
+      y += 2;
+      doc.setFont("helvetica", "bold");
+      if (item.selectedIdx === -1) {
+        doc.setTextColor(150, 150, 150);
+        doc.text("STATUS: UNATTEMPTED", 20, y);
+      } else if (item.isCorrect) {
+        doc.setTextColor(0, 153, 51);
+        doc.text(`STATUS: CORRECT (Selected: ${String.fromCharCode(65 + item.selectedIdx)})`, 20, y);
+      } else {
+        doc.setTextColor(204, 0, 0);
+        doc.text(`STATUS: INCORRECT (Selected: ${String.fromCharCode(65 + item.selectedIdx)}, Correct: ${String.fromCharCode(65 + item.correct)})`, 20, y);
+      }
+      
+      doc.setTextColor(0);
+      y += 10;
+      doc.setDrawColor(240);
+      doc.line(20, y - 5, pageWidth - 20, y - 5);
+    });
+
+    doc.save(`CUET_Result_${currentUser?.name || "Candidate"}.pdf`);
   };
 
   const handleAction = (action: 'save' | 'mark' | 'clear' | 'save-mark') => {
@@ -1910,8 +2039,40 @@ const CUETExamView = ({
                 </div>
 
                 <div className="flex gap-4">
-                    <button onClick={() => window.print()} className="flex-1 bg-white border-2 border-slate-200 text-slate-700 font-black py-4 rounded-2xl uppercase shadow-md hover:bg-slate-50 transition-all flex items-center justify-center gap-2"><Download className="w-5 h-5"/> Save Report</button>
+                    <button onClick={downloadDetailedPDF} className="flex-1 bg-white border-2 border-slate-200 text-slate-700 font-black py-4 rounded-2xl uppercase shadow-md hover:bg-slate-50 transition-all flex items-center justify-center gap-2"><Download className="w-5 h-5"/> Download A-Z Report</button>
                     <button onClick={() => setCuetStatus('upload')} className="flex-1 bg-slate-900 text-white font-black py-4 rounded-2xl uppercase shadow-xl hover:bg-black transition-all">New Practice Session</button>
+                </div>
+
+                <div className="mt-12 space-y-6 text-left">
+                  <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter border-b-2 border-slate-100 pb-2">Detailed Answer Key Analysis</h3>
+                  {cuetResult?.details?.map((item: any, idx: number) => (
+                    <div key={idx} className={`p-6 rounded-3xl border ${item.isCorrect ? 'bg-green-50 border-green-100' : item.selectedIdx === -1 ? 'bg-slate-50 border-slate-100' : 'bg-red-50 border-red-100'} transition-all`}>
+                      <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Question {idx + 1}</p>
+                      <h4 className="text-sm font-bold text-slate-800 leading-relaxed mb-4">{item.question}</h4>
+                      <div className="grid grid-cols-1 gap-2">
+                        {item.options.map((opt: string, optIdx: number) => {
+                          const isCorrectOpt = optIdx === item.correct;
+                          const isSelectedOpt = optIdx === item.selectedIdx;
+                          return (
+                            <div key={optIdx} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-between ${isCorrectOpt ? 'bg-green-600 text-white' : isSelectedOpt ? 'bg-red-600 text-white' : 'bg-white text-slate-600 border border-slate-100'}`}>
+                              <span>{String.fromCharCode(65 + optIdx)}) {opt}</span>
+                              {isCorrectOpt && <CheckCircle2 className="w-4 h-4" />}
+                              {isSelectedOpt && !isCorrectOpt && <AlertTriangle className="w-4 h-4" />}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="mt-4 flex items-center gap-2">
+                        {item.selectedIdx === -1 ? (
+                          <span className="text-[10px] font-black uppercase text-slate-400">Not Attempted</span>
+                        ) : item.isCorrect ? (
+                          <span className="text-[10px] font-black uppercase text-green-600 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Correct Answer</span>
+                        ) : (
+                          <span className="text-[10px] font-black uppercase text-red-600 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Incorrect Choice</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
             </div>
         </div>
