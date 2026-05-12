@@ -1321,18 +1321,84 @@ const TeacherDashboard = ({
 );
 
 const AppContent: React.FC = () => {
-  // CUET Exam Hub State
-  const [cuetStatus, setCuetStatus] = useState<'upload' | 'instructions' | 'exam' | 'terminated' | 'finished'>('upload');
+  // Exam Hub state
+  const [examType, setExamType] = useState<'cuet' | 'neet' | 'jee' | null>(null);
+  const [cuetStatus, setCuetStatus] = useState<'selection' | 'upload' | 'instructions' | 'exam' | 'terminated' | 'finished'>('selection');
   const [cuetQuestions, setCuetQuestions] = useState<any[]>([]);
+  const [neetData, setNeetData] = useState<Record<string, any[]>>({ 'Physics': [], 'Chemistry': [], 'Biology': [] });
+  const [activeNeetSubject, setActiveNeetSubject] = useState<string>('Physics');
   const [cuetAnswers, setCuetAnswers] = useState<Record<number, string>>({});
   const [cuetStatusMap, setCuetStatusMap] = useState<Record<number, 'not-visited' | 'not-answered' | 'answered' | 'marked' | 'answered-marked'>>({});
-  const [cuetTimeLeft, setCuetTimeLeft] = useState(3600); // 60 minutes
+  const [cuetTimeLeft, setCuetTimeLeft] = useState(3600); // Default 60 mins
   const [cuetIsLocked, setCuetIsLocked] = useState(false);
   const [cuetResult, setCuetResult] = useState<any>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const [neetOmrFilled, setNeetOmrFilled] = useState<Record<number, boolean>>({});
 
   // Auto-fill candidate name
   const candidateName = "PALLAVI";
+
+  const handleNeetTextUpload = async (subject: string, pastedText: string) => {
+    const apiKey = process.env.GEMINI_API_KEY || (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY);
+    if (!apiKey) { alert("AI Service is currently unavailable. Please ensure GEMINI_API_KEY is set."); return; }
+    if (!pastedText.trim()) { alert("Please paste some text first."); return; }
+
+    setIsAiLoading(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `Extract all multiple choice questions for ${subject} from the following text. 
+      Format each question as an object with:
+      1. question: the full text of the question
+      2. options: an array of EXACTLY 4 strings
+      3. correct: the index (0-3) of the correct answer (if marked)
+      
+      Text to process:
+      ${pastedText}
+      
+      Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "correct": 0}]. If none found, return [].`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: [{ parts: [{ text: prompt }] }],
+      });
+      const text = response.text;
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        const extracted = JSON.parse(jsonMatch[0]);
+        if (extracted.length > 0) {
+          setNeetData(prev => ({ ...prev, [subject]: extracted }));
+          alert(`${extracted.length} questions extracted for ${subject}.`);
+        } else {
+          alert(`No questions found for ${subject}.`);
+        }
+      }
+    } catch (error: any) {
+      console.error('NEET Extraction Error:', error);
+      alert('Failed: ' + error.message);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const startNeetSimulation = () => {
+    // Collect all subjects into one array but track subject indices
+    const allQs: any[] = [];
+    const subjects = ['Physics', 'Chemistry', 'Biology'];
+    subjects.forEach(sub => {
+      neetData[sub].forEach(q => allQs.push({ ...q, subject: sub }));
+    });
+
+    if (allQs.length === 0) {
+      alert("Please upload and extract questions for subjects first.");
+      return;
+    }
+
+    setCuetQuestions(allQs);
+    setCuetAnswers({});
+    setCuetStatusMap({});
+    setCuetTimeLeft(10800); // 3 hours (180 minutes)
+    setCuetStatus('instructions');
+  };
 
   const handleCuetTextUpload = async (pastedText: string) => {
     const apiKey = process.env.GEMINI_API_KEY || (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY);
@@ -1470,6 +1536,8 @@ const AppContent: React.FC = () => {
       <div className="flex-1">
         <CUETExamView 
           currentUser={{ name: candidateName }}
+          examType={examType}
+          setExamType={setExamType}
           cuetStatus={cuetStatus}
           setCuetStatus={setCuetStatus}
           cuetQuestions={cuetQuestions}
@@ -1484,9 +1552,16 @@ const AppContent: React.FC = () => {
           setCuetResult={setCuetResult}
           handleCuetImageUpload={handleCuetImageUpload}
           handleCuetTextUpload={handleCuetTextUpload}
+          handleNeetTextUpload={handleNeetTextUpload}
+          neetData={neetData}
+          startNeetSimulation={startNeetSimulation}
+          activeNeetSubject={activeNeetSubject}
+          setActiveNeetSubject={setActiveNeetSubject}
           isAiLoading={isAiLoading}
           cuetStatusMap={cuetStatusMap}
           setCuetStatusMap={setCuetStatusMap}
+          neetOmrFilled={neetOmrFilled}
+          setNeetOmrFilled={setNeetOmrFilled}
         />
       </div>
       <footer className="py-8 border-t border-slate-900">
@@ -1501,15 +1576,21 @@ const AppContent: React.FC = () => {
 };
 
 const CUETExamView = ({
-  currentUser, cuetStatus, setCuetStatus, cuetQuestions, setCuetQuestions,
+  currentUser, examType, setExamType, cuetStatus, setCuetStatus, cuetQuestions, setCuetQuestions,
   cuetAnswers, setCuetAnswers, cuetTimeLeft, setCuetTimeLeft,
   cuetIsLocked, setCuetIsLocked, cuetResult, setCuetResult,
-  handleCuetImageUpload, handleCuetTextUpload, setStudentView, isAiLoading,
-  cuetStatusMap, setCuetStatusMap
+  handleCuetImageUpload, handleCuetTextUpload, handleNeetTextUpload,
+  neetData, startNeetSimulation, activeNeetSubject, setActiveNeetSubject,
+  isAiLoading, cuetStatusMap, setCuetStatusMap,
+  neetOmrFilled, setNeetOmrFilled
 }: any) => {
   const [activeQuestion, setActiveQuestion] = useState(0);
   const [unlockCode, setUnlockCode] = useState('');
   const [pastedText, setPastedText] = useState('');
+  const [neetPastedTexts, setNeetPastedTexts] = useState<Record<string, string>>({
+    'Physics': '', 'Chemistry': '', 'Biology': ''
+  });
+  const [omrError, setOmrError] = useState<string | null>(null);
 
   // Proctoring logic
   useEffect(() => {
@@ -1545,10 +1626,9 @@ const CUETExamView = ({
 
   // Initialize status map for new questions
   useEffect(() => {
-    if (cuetQuestions.length > 0 && Object.keys(cuetStatusMap).length === 0) {
+    if (cuetQuestions.length > 0 && (Object.keys(cuetStatusMap).length === 0 || cuetQuestions.length !== Object.keys(cuetStatusMap).length)) {
         const initialMap: any = {};
         cuetQuestions.forEach((_: any, i: number) => initialMap[i] = 'not-visited');
-        // First question is viewed immediately
         initialMap[0] = 'not-answered';
         setCuetStatusMap(initialMap);
     }
@@ -1560,18 +1640,29 @@ const CUETExamView = ({
 
   const handleFinishExam = () => {
     let score = 0;
-    let correct = 0;
-    let incorrect = 0;
-    let unattempted = 0;
+    let correctCount = 0;
+    let incorrectCount = 0;
+    let unattemptedCount = 0;
     
+    // NEET Marking: +4, -1, 0
+    // CUET Marking: +5, -1, 0
+    const correctScore = examType === 'neet' ? 4 : 5;
+    const incorrectPenalty = 1;
+
     const detailedResults = cuetQuestions.map((q: any, idx: number) => {
       const selected = cuetAnswers[idx];
       const selectedIdx = selected !== undefined ? parseInt(selected) : -1;
       const isCorrect = selectedIdx === q.correct;
       
-      if (selected === undefined) unattempted++;
-      else if (isCorrect) { score += 5; correct++; }
-      else { score -= 1; incorrect++; }
+      if (selected === undefined) {
+        unattemptedCount++;
+      } else if (isCorrect) {
+        score += correctScore;
+        correctCount++;
+      } else {
+        score -= incorrectPenalty;
+        incorrectCount++;
+      }
 
       return {
         ...q,
@@ -1582,14 +1673,52 @@ const CUETExamView = ({
 
     setCuetResult({ 
       score, 
-      correct, 
-      incorrect, 
-      unattempted, 
-      total: cuetQuestions.length * 5,
+      correct: correctCount, 
+      incorrect: incorrectCount, 
+      unattempted: unattemptedCount, 
+      total: cuetQuestions.length * correctScore,
       details: detailedResults
     });
     setCuetStatus('finished');
   };
+
+  if (cuetStatus === 'selection') {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
+        <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-2 gap-8">
+          <motion.button 
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => { setExamType('cuet'); setCuetStatus('upload'); }}
+            className="bg-white p-12 rounded-[40px] text-center space-y-6 shadow-2xl border-4 border-transparent hover:border-blue-500 transition-all"
+          >
+            <div className="w-20 h-20 bg-blue-100 rounded-3xl flex items-center justify-center mx-auto">
+              <GraduationCap className="w-10 h-10 text-blue-600" />
+            </div>
+            <div>
+              <h3 className="text-3xl font-black text-slate-900 tracking-tighter">CUET 2026</h3>
+              <p className="text-slate-500 font-bold uppercase text-xs mt-2 tracking-widest">Common University Entrance Test</p>
+            </div>
+          </motion.button>
+
+          <motion.button 
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => { setExamType('neet'); setCuetStatus('upload'); }}
+            className="bg-white p-12 rounded-[40px] text-center space-y-6 shadow-2xl border-4 border-transparent hover:border-red-500 transition-all"
+          >
+            <div className="w-20 h-20 bg-red-100 rounded-3xl flex items-center justify-center mx-auto">
+              <TrendingUp className="w-10 h-10 text-red-600" />
+            </div>
+            <div>
+              <h3 className="text-3xl font-black text-slate-900 tracking-tighter">NEET UG</h3>
+              <p className="text-slate-500 font-bold uppercase text-xs mt-2 tracking-widest">National Eligibility cum Entrance Test</p>
+            </div>
+          </motion.button>
+        </div>
+      </div>
+    );
+  }
 
   const downloadDetailedPDF = async () => {
     const doc = new jsPDF();
@@ -1599,7 +1728,7 @@ const CUETExamView = ({
     // Header
     doc.setFontSize(22);
     doc.setTextColor(0, 51, 153);
-    doc.text("CUET 2026 PRACTICE PORTAL", pageWidth / 2, y, { align: 'center' });
+    doc.text(`${examType === 'neet' ? 'NEET UG' : 'CUET'} 2026 PRACTICE PORTAL`, pageWidth / 2, y, { align: 'center' });
     y += 10;
     doc.setFontSize(14);
     doc.setTextColor(100);
@@ -1614,7 +1743,7 @@ const CUETExamView = ({
     doc.setTextColor(0);
     doc.setFont("helvetica", "bold");
     doc.text(`Candidate Name: ${currentUser?.name || "PALLAVI"}`, 20, y);
-    doc.text(`Exam ID: CUET2026-X7Y`, 150, y);
+    doc.text(`Exam ID: ${examType === 'neet' ? 'NEET' : 'CUET'}2026-X7Y`, 150, y);
     y += 10;
     doc.text(`Total Score: ${cuetResult?.score} / ${cuetResult?.total}`, 20, y);
     doc.text(`Date: ${new Date().toLocaleDateString()}`, 150, y);
@@ -1650,7 +1779,8 @@ const CUETExamView = ({
       }
 
       doc.setFont("helvetica", "bold");
-      const questionLines = doc.splitTextToSize(`${index + 1}. ${item.question}`, pageWidth - 40);
+      const questionText = item.subject ? `[${item.subject}] ${item.question}` : item.question;
+      const questionLines = doc.splitTextToSize(`${index + 1}. ${questionText}`, pageWidth - 40);
       doc.text(questionLines, 20, y);
       y += (questionLines.length * 5) + 2;
 
@@ -1681,16 +1811,18 @@ const CUETExamView = ({
         doc.text(`STATUS: CORRECT (Selected: ${String.fromCharCode(65 + item.selectedIdx)})`, 20, y);
       } else {
         doc.setTextColor(204, 0, 0);
-        doc.text(`STATUS: INCORRECT (Selected: ${String.fromCharCode(65 + item.selectedIdx)}, Correct: ${String.fromCharCode(65 + item.correct)})`, 20, y);
+        const correctLetter = item.correct !== undefined ? String.fromCharCode(65 + item.correct) : 'N/A';
+        doc.text(`STATUS: INCORRECT (Selected: ${String.fromCharCode(65 + item.selectedIdx)}, Correct: ${correctLetter})`, 20, y);
       }
       
       doc.setTextColor(0);
-      y += 10;
+      y += 8;
       doc.setDrawColor(240);
-      doc.line(20, y - 5, pageWidth - 20, y - 5);
+      doc.line(20, y, pageWidth - 20, y);
+      y += 8;
     });
 
-    doc.save(`CUET_Result_${currentUser?.name || "Candidate"}.pdf`);
+    doc.save(`${examType?.toUpperCase()}_Result_${currentUser?.name || "Candidate"}.pdf`);
   };
 
   const handleAction = (action: 'save' | 'mark' | 'clear' | 'save-mark') => {
@@ -1721,7 +1853,64 @@ const CUETExamView = ({
           if (cuetStatusMap[nextQ] === 'not-visited') {
               updateStatus(nextQ, 'not-answered');
           }
+          // If we switch subjects automatically when moving next
+          const nextSubject = cuetQuestions[nextQ].subject;
+          if (nextSubject && nextSubject !== activeNeetSubject) {
+            setActiveNeetSubject(nextSubject);
+          }
       }
+  };
+
+  const OmrCircle = ({ index, optionIdx, isFilled, onFill }: { index: number, optionIdx: number, isFilled: boolean, onFill: () => void }) => {
+    const [progress, setProgress] = useState(0);
+    const [isPressing, setIsPressing] = useState(false);
+    const intervalRef = useRef<any>(null);
+
+    const startFilling = () => {
+        if (isFilled) return;
+        setIsPressing(true);
+        setOmrError(null);
+        intervalRef.current = setInterval(() => {
+            setProgress(prev => {
+                if (prev >= 100) {
+                    clearInterval(intervalRef.current);
+                    onFill();
+                    return 100;
+                }
+                return prev + 5; // Fill speed
+            });
+        }, 30);
+    };
+
+    const stopFilling = () => {
+        setIsPressing(false);
+        clearInterval(intervalRef.current);
+        if (progress < 100 && progress > 0) {
+            setOmrError("Correct way to fill circle: Hold until fully filled");
+            setProgress(0);
+        }
+    };
+
+    return (
+        <div 
+            className="relative w-10 h-10 rounded-full border-2 border-slate-400 cursor-pointer overflow-hidden bg-white shrink-0"
+            onMouseDown={startFilling}
+            onMouseUp={stopFilling}
+            onMouseLeave={stopFilling}
+            onTouchStart={startFilling}
+            onTouchEnd={stopFilling}
+        >
+            {/* Fill Progress Layer */}
+            <div 
+                className="absolute inset-0 bg-slate-900 transition-all duration-75 origin-center"
+                style={{ clipPath: `circle(${isFilled ? 100 : progress}% at 50% 50%)` }}
+            />
+            {/* Outline and Label */}
+            <div className={`absolute inset-0 flex items-center justify-center font-black text-xs transition-colors ${isFilled || progress > 50 ? 'text-white' : 'text-slate-500'}`}>
+                {String.fromCharCode(65 + optionIdx)}
+            </div>
+        </div>
+    );
   };
 
   if (cuetIsLocked) {
@@ -1743,6 +1932,55 @@ const CUETExamView = ({
   }
 
   if (cuetStatus === 'upload') {
+    if (examType === 'neet') {
+      return (
+        <div className="max-w-4xl mx-auto py-12 space-y-8 px-4">
+          <div className="text-center space-y-4">
+            <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">NEET UG SIMULATOR</h2>
+            <p className="text-red-500 font-bold text-xs tracking-widest uppercase">Multi-Subject Question Injection</p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {['Physics', 'Chemistry', 'Biology'].map(sub => (
+              <div key={sub} className="bg-white p-6 rounded-3xl border border-slate-200 space-y-4 shadow-xl">
+                <h3 className="font-orbitron font-black text-sm text-slate-800 uppercase tracking-widest">{sub}</h3>
+                <textarea 
+                  value={neetPastedTexts[sub]}
+                  onChange={(e) => setNeetPastedTexts({...neetPastedTexts, [sub]: e.target.value})}
+                  placeholder={`Paste ${sub} questions here...`}
+                  className="w-full h-48 p-4 bg-slate-50 border rounded-2xl text-xs font-mono"
+                />
+                <button 
+                  onClick={() => handleNeetTextUpload(sub, neetPastedTexts[sub])}
+                  disabled={isAiLoading || !neetPastedTexts[sub].trim()}
+                  className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-black disabled:opacity-50"
+                >
+                  {isAiLoading ? 'Analyzing...' : `Extract ${sub}`}
+                </button>
+                <div className="text-center">
+                  <p className="text-[10px] font-bold text-slate-400">
+                    {neetData[sub]?.length || 0} Questions Ready
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button 
+            onClick={startNeetSimulation}
+            className="w-full bg-red-600 text-white font-black py-6 rounded-[30px] uppercase text-2xl shadow-2xl hover:bg-red-700 transition-all flex items-center justify-center gap-4"
+          >
+            <Zap className="w-8 h-8" />
+            INITIALIZE TEST ENVIRONMENT
+          </button>
+          
+          <div className="text-center">
+            <button onClick={() => setCuetStatus('selection')} className="text-slate-400 font-bold text-xs uppercase underline">Back to Selection</button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="max-w-xl mx-auto py-20 space-y-8 px-4">
         <div className="text-center space-y-4">
@@ -1780,7 +2018,7 @@ const CUETExamView = ({
           </button>
           
           <div className="text-center">
-            <p className="text-slate-400 text-[10px] font-bold uppercase">AI will automatically identify questions, options, and answers</p>
+            <button onClick={() => setCuetStatus('selection')} className="text-slate-400 font-bold text-xs uppercase underline">Back to Selection</button>
           </div>
         </div>
         <div className="bg-amber-50 p-8 rounded-3xl border border-amber-100 space-y-3">
@@ -1834,12 +2072,18 @@ const CUETExamView = ({
         return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;
     };
 
+    // Subject filtering for Navigation Palette
+    const subjects = examType === 'neet' ? ['Physics', 'Chemistry', 'Biology'] : ['General Test'];
+    const filteredQuestions = examType === 'neet' 
+        ? cuetQuestions.map((q, i) => ({...q, originalIndex: i})).filter(q => q.subject === activeNeetSubject)
+        : cuetQuestions.map((q, i) => ({...q, originalIndex: i}));
+
     const StatusBadge = ({ type, count, label }: { type: any, count: number, label: string }) => {
         const shapes: any = {
             'not-visited': 'bg-white border text-slate-900 rounded',
-            'not-answered': 'bg-red-500 text-white rounded-t-3xl rounded-b-lg',
-            'answered': 'bg-green-600 text-white rounded-b-3xl rounded-t-lg',
-            'marked': 'bg-indigo-600 text-white rounded-full',
+            'not-answered': 'bg-red-500 text-white rounded-t-3xl rounded-b-lg border-b-4 border-red-700',
+            'answered': 'bg-green-600 text-white rounded-b-3xl rounded-t-lg border-t-4 border-green-800',
+            'marked': 'bg-indigo-600 text-white rounded-full border-2 border-indigo-200',
             'answered-marked': 'bg-indigo-600 text-white rounded-full relative after:content-[""] after:absolute after:bottom-0 after:right-0 after:w-3 after:h-3 after:bg-green-500 after:rounded-full after:border-2 after:border-white'
         };
         return (
@@ -1863,36 +2107,48 @@ const CUETExamView = ({
         {/* NTA Master Header */}
         <div className="bg-white border-b flex flex-col sm:flex-row justify-between items-center px-6 py-3 shadow-md z-[100]">
           <div className="flex items-center gap-4">
-            <img src="https://nta.ac.in/img/logo.png" className="h-12" alt="NTA" />
+            <img src="https://nta.ac.in/img/logo.png" className="h-10 sm:h-12" alt="NTA" />
             <div className="h-10 w-[2px] bg-slate-200 mx-2 hidden sm:block" />
-            <div>
-              <h1 className="text-xl font-black text-slate-900 tracking-tighter uppercase leading-none">NATIONAL TESTING AGENCY</h1>
-              <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mt-1">Excellence in Assessment</p>
+            <div className="hidden xs:block">
+              <h1 className="text-sm sm:text-lg font-black text-slate-900 tracking-tighter uppercase leading-none">NATIONAL TESTING AGENCY</h1>
+              <p className="text-[8px] sm:text-[10px] font-bold text-blue-600 uppercase tracking-widest mt-1">Excellence in Assessment</p>
             </div>
           </div>
-          <div className="flex gap-8 items-center bg-slate-50 px-6 py-2 rounded-2xl border border-slate-200 mt-3 sm:mt-0">
+          <div className="flex gap-4 sm:gap-8 items-center bg-slate-50 px-4 sm:px-6 py-2 rounded-2xl border border-slate-200 mt-2 sm:mt-0">
             <div className="hidden lg:block text-center border-r pr-6">
                 <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Candidate Name</p>
-                <p className="text-xs font-black text-slate-800 uppercase tracking-tight">PALLAVI</p>
+                <p className="text-xs font-black text-slate-800 uppercase tracking-tight">{currentUser?.name || "PALLAVI"}</p>
             </div>
-            <div className="text-center border-r pr-6">
+            <div className="text-center border-r pr-4 sm:pr-6">
                 <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Subject Name</p>
-                <p className="text-xs font-black text-blue-600 uppercase tracking-tight">CUET Practice</p>
+                <p className="text-xs font-black text-blue-600 uppercase tracking-tight">{examType === 'neet' ? 'NEET UG 2026' : 'CUET 2026'}</p>
             </div>
             <div className="text-center">
-                <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Remaining Time</p>
-                <p className="text-lg font-mono font-black text-red-600 tabular-nums">{formatTime(cuetTimeLeft)}</p>
+                <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Time Left</p>
+                <p className="text-base sm:text-lg font-mono font-black text-red-600 tabular-nums leading-none">{formatTime(cuetTimeLeft)}</p>
             </div>
           </div>
         </div>
 
-        {/* Section Bar */}
-        <div className="bg-[#ff9d00] px-6 py-2 flex items-center justify-between shadow-inner">
+        {/* Section Bar / Subject Switching */}
+        <div className="bg-[#ff9d00] px-6 py-1 flex items-center justify-between shadow-inner">
             <div className="flex gap-1">
-                <button className="bg-blue-600 text-white px-6 py-1.5 rounded-t-lg font-black text-xs uppercase shadow-lg">GENERAL TEST</button>
+                {subjects.map(sub => (
+                    <button 
+                        key={sub}
+                        onClick={() => {
+                            setActiveNeetSubject(sub);
+                            const firstInSub = cuetQuestions.findIndex(q => q.subject === sub);
+                            if (firstInSub !== -1) setActiveQuestion(firstInSub);
+                        }}
+                        className={`${activeNeetSubject === sub || examType === 'cuet' ? 'bg-blue-600 text-white' : 'bg-white/20 text-white/80 hover:bg-white/30'} px-6 py-2.5 rounded-t-lg font-black text-xs uppercase shadow-lg transition-all`}
+                    >
+                        {sub}
+                    </button>
+                ))}
             </div>
-            <div className="flex items-center gap-4 text-white">
-                <div className="flex items-center gap-2 text-[10px] font-bold uppercase"><Monitor className="w-4 h-4"/> Exam: CUET Simulation</div>
+            <div className="hidden md:flex items-center gap-4 text-white">
+                <div className="flex items-center gap-2 text-[10px] font-bold uppercase"><Monitor className="w-4 h-4"/> NTA PRACTICE PORTAL V2.6</div>
             </div>
         </div>
 
@@ -1904,96 +2160,123 @@ const CUETExamView = ({
                 <div className="p-1.5 bg-blue-100 rounded-full"><Info className="w-4 h-4 text-blue-600"/></div>
             </div>
             
-            <div className="flex-1 p-10 overflow-y-auto">
-              <div className="text-lg font-bold text-slate-800 leading-relaxed mb-12 select-none whitespace-pre-wrap">{currentQ?.question}</div>
-              <div className="grid grid-cols-1 gap-5">
-                {currentQ?.options.map((opt: string, i: number) => (
-                  <button 
-                    key={i} 
-                    onClick={() => setCuetAnswers({...cuetAnswers, [activeQuestion]: i.toString()})} 
-                    className={`group flex items-center gap-5 p-5 rounded-2xl border-2 text-left transition-all relative overflow-hidden ${cuetAnswers[activeQuestion] === i.toString() ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-slate-100 hover:border-slate-300'}`}
-                  >
-                    <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center font-black text-sm shrink-0 transition-colors ${cuetAnswers[activeQuestion] === i.toString() ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'text-slate-400'}`}>({i+1})</div>
-                    <span className={`text-sm font-bold transition-colors ${cuetAnswers[activeQuestion] === i.toString() ? 'text-blue-900' : 'text-slate-600'}`}>{opt}</span>
-                    {cuetAnswers[activeQuestion] === i.toString() && <div className="absolute right-4 top-1/2 -translate-y-1/2"><CheckCircle2 className="w-6 h-6 text-blue-600" /></div>}
-                  </button>
-                ))}
+            <div className="flex-1 p-6 sm:p-10 overflow-y-auto">
+              <div className="text-lg font-bold text-slate-800 leading-relaxed mb-10 select-none whitespace-pre-wrap">{currentQ?.question}</div>
+              
+              <div className="grid grid-cols-1 gap-4 max-w-2xl">
+                {currentQ?.options.map((opt: string, i: number) => {
+                  const isSelected = cuetAnswers[activeQuestion] === i.toString();
+                  const isNeet = examType === 'neet';
+                  
+                  return (
+                    <div key={i} className={`flex items-center gap-4 transition-all`}>
+                      {isNeet ? (
+                        <OmrCircle 
+                          index={activeQuestion} 
+                          optionIdx={i} 
+                          isFilled={isSelected} 
+                          onFill={() => {
+                            if (!isSelected) {
+                              setCuetAnswers({...cuetAnswers, [activeQuestion]: i.toString()});
+                              setNeetOmrFilled({...neetOmrFilled, [activeQuestion]: true});
+                            }
+                          }}
+                        />
+                      ) : (
+                        <button 
+                          onClick={() => setCuetAnswers({...cuetAnswers, [activeQuestion]: i.toString()})}
+                          className={`w-10 h-10 rounded-full border-2 flex items-center justify-center font-black text-xs shrink-0 transition-colors ${isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 text-slate-500'}`}
+                        >
+                          {String.fromCharCode(65 + i)}
+                        </button>
+                      )}
+                      
+                      <div className={`flex-1 p-4 rounded-xl border-2 transition-all ${isSelected ? 'border-slate-800 bg-slate-50 shadow-sm' : 'border-slate-100'}`}>
+                        <span className={`text-sm font-bold ${isSelected ? 'text-slate-900' : 'text-slate-600'}`}>{opt}</span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
+
+              {omrError && (
+                 <div className="mt-6 p-4 bg-red-50 border border-red-100 rounded-xl flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-red-500" />
+                    <span className="text-red-600 font-bold text-xs uppercase">{omrError}</span>
+                 </div>
+              )}
             </div>
 
-            {/* Action Bar from Reference Image */}
-            <div className="bg-slate-50 border-t p-6 flex flex-wrap gap-4 items-center">
-                <button onClick={() => handleAction('save')} className="bg-[#4caf50] text-white px-6 py-3 rounded-lg font-black text-[11px] uppercase tracking-tighter hover:brightness-110 active:scale-95 transition-all shadow-md">SAVE & NEXT</button>
-                <button onClick={() => handleAction('save-mark')} className="bg-[#ff9800] text-white px-6 py-3 rounded-lg font-black text-[11px] uppercase tracking-tighter hover:brightness-110 active:scale-95 transition-all shadow-md">SAVE & MARK FOR REVIEW</button>
-                <button onClick={() => handleAction('clear')} className="bg-white border-2 border-slate-300 text-slate-700 px-6 py-3 rounded-lg font-black text-[11px] uppercase tracking-tighter hover:bg-slate-100 active:scale-95 transition-all shadow-sm">CLEAR RESPONSE</button>
-                <button onClick={() => handleAction('mark')} className="bg-[#03a9f4] text-white px-6 py-3 rounded-lg font-black text-[11px] uppercase tracking-tighter hover:brightness-110 active:scale-95 transition-all shadow-md">MARK FOR REVIEW & NEXT</button>
-            </div>
-
-            {/* Fixed Bottom Navigation */}
-            <div className="bg-white border-t p-4 flex justify-between items-center shadow-[0_-4px_10px_rgba(0,0,0,0.05)]">
-                <div className="flex gap-3">
-                    <button onClick={() => setActiveQuestion(prev => Math.max(0, prev - 1))} className="px-8 py-2.5 border-2 border-slate-400 rounded-lg font-black text-xs uppercase hover:bg-slate-100 transition-all">&lt;&lt; BACK</button>
-                    <button onClick={() => setActiveQuestion(prev => Math.min(cuetQuestions.length - 1, prev + 1))} className="px-8 py-2.5 bg-slate-800 text-white rounded-lg font-black text-xs uppercase hover:bg-black transition-all">NEXT &gt;&gt;</button>
+            {/* NTA Action Bar */}
+            <div className="bg-[#f0f4f7] border-t p-4 flex flex-wrap gap-2 items-center justify-between">
+                <div className="flex flex-wrap gap-2">
+                    <button onClick={() => handleAction('save-mark')} className="bg-[#f0ad4e] hover:bg-[#ec971f] text-white px-4 py-2 rounded border border-[#eea236] font-bold text-[11px] uppercase shadow-sm">Mark for Review & Next</button>
+                    <button onClick={() => handleAction('clear')} className="bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 rounded border border-slate-300 font-bold text-[11px] uppercase shadow-sm">Clear Response</button>
                 </div>
-                <button onClick={() => window.confirm('Final Submit?') && handleFinishExam()} className="bg-[#2e7d32] text-white px-10 py-2.5 rounded-lg font-black text-xs uppercase shadow-xl hover:brightness-110 transition-all">SUBMIT</button>
+                <button onClick={() => handleAction('save')} className="bg-[#337ab7] hover:bg-[#286090] text-white px-8 py-2 rounded border border-[#2e6da4] font-bold text-[11px] uppercase shadow-sm">Save & Next</button>
+            </div>
+
+            <div className="bg-slate-800 border-t p-3 flex justify-between items-center text-white px-6">
+                <div className="flex gap-2">
+                    <button onClick={() => setActiveQuestion(prev => Math.max(0, prev - 1))} className="px-6 py-2 bg-white/10 hover:bg-white/20 rounded font-black text-[10px] uppercase transition-all">&lt;&lt; BACK</button>
+                    <button onClick={() => setActiveQuestion(prev => Math.min(cuetQuestions.length - 1, prev + 1))} className="px-6 py-2 bg-white/10 hover:bg-white/20 rounded font-black text-[10px] uppercase transition-all">NEXT &gt;&gt;</button>
+                </div>
+                <button onClick={() => window.confirm('Are you sure you want to submit your paper?') && handleFinishExam()} className="bg-green-600 hover:bg-green-700 text-white px-8 py-2 rounded font-black text-[11px] uppercase shadow-lg transition-all">SUBMIT</button>
             </div>
           </div>
 
           {/* Right Palette Panel */}
-          <div className="w-full sm:w-[360px] bg-white flex flex-col p-6 overflow-y-auto">
-            <div className="flex flex-col gap-8">
-                {/* Status Guide */}
-                <div className="grid grid-cols-2 gap-y-4 gap-x-2 p-4 bg-slate-50 border rounded-2xl">
-                    <StatusBadge type="not-visited" count={counts['not-visited']} label="Not Visited" />
-                    <StatusBadge type="not-answered" count={counts['not-answered']} label="Not Answered" />
-                    <StatusBadge type="answered" count={counts['answered']} label="Answered" />
-                    <StatusBadge type="marked" count={counts['marked']} label="Marked Review" />
-                    <div className="col-span-2">
-                        <StatusBadge type="answered-marked" count={counts['answered-marked']} label="Ans & Marked Review (evaluated)" />
-                    </div>
-                </div>
-
-                {/* Candidate Sidebar Profile Style */}
-                <div className="flex items-center gap-4 p-4 border rounded-2xl bg-gradient-to-r from-blue-50 to-white">
-                    <div className="w-12 h-12 bg-slate-200 rounded-lg flex items-center justify-center p-1 border overflow-hidden">
-                        <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=pallavi" alt="Profile" />
+          <div className="w-full sm:w-[320px] bg-white flex flex-col p-4 overflow-y-auto">
+            <div className="flex flex-col gap-6">
+                <div className="flex items-center gap-4 p-3 border rounded-xl bg-slate-50">
+                    <div className="w-10 h-10 bg-slate-200 rounded flex items-center justify-center p-1 border overflow-hidden">
+                        <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.name || "PALLAVI"}`} alt="Profile" />
                     </div>
                     <div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase">Roll No.</p>
-                        <p className="text-xs font-black text-slate-800">2026-X7Y-922</p>
+                        <p className="text-[8px] font-black text-slate-400 uppercase">Candidate Name:</p>
+                        <p className="text-[10px] font-black text-slate-800">{currentUser?.name || "PALLAVI"}</p>
                     </div>
                 </div>
 
-                {/* Palette */}
-                <div className="bg-blue-600 px-4 py-2 rounded-t-xl text-white font-black text-[11px] uppercase tracking-wider text-center">Question Palette</div>
-                <div className="bg-slate-50 border p-5 rounded-b-2xl shadow-inner max-h-[400px] overflow-y-auto">
-                    <div className="grid grid-cols-5 gap-3">
-                        {cuetQuestions.map((_: any, i: number) => {
+                <div className="grid grid-cols-2 gap-y-3 gap-x-2 p-3 bg-slate-50 border rounded-xl">
+                    <StatusBadge type="answered" count={counts['answered']} label="Answered" />
+                    <StatusBadge type="not-answered" count={counts['not-answered']} label="Not Answered" />
+                    <StatusBadge type="not-visited" count={counts['not-visited']} label="Not Visited" />
+                    <StatusBadge type="marked" count={counts['marked']} label="Marked Review" />
+                    <div className="col-span-2">
+                        <StatusBadge type="answered-marked" count={counts['answered-marked']} label="Ans & Marked Review" />
+                    </div>
+                </div>
+
+                <div className="bg-blue-600 px-4 py-2 rounded-t text-white font-black text-[10px] uppercase text-center shadow-md">{activeNeetSubject || 'GENERAL TEST'}</div>
+                <div className="bg-slate-50 border p-3 rounded-b shadow-inner">
+                    <div className="grid grid-cols-5 gap-2">
+                        {filteredQuestions.map((q: any) => {
+                            const i = q.originalIndex;
                             const status = cuetStatusMap[i] || 'not-visited';
                             const shapes: any = {
                                 'not-visited': 'bg-white border text-slate-900 rounded',
-                                'not-answered': 'bg-red-500 text-white rounded-t-3xl rounded-b-lg',
-                                'answered': 'bg-green-600 text-white rounded-b-3xl rounded-t-lg',
-                                'marked': 'bg-indigo-600 text-white rounded-full',
+                                'not-answered': 'bg-red-500 text-white rounded-t-3xl rounded-b-lg border-b-2 border-red-700',
+                                'answered': 'bg-green-600 text-white rounded-b-3xl rounded-t-lg border-t-2 border-green-800',
+                                'marked': 'bg-indigo-600 text-white rounded-full border border-indigo-200',
                                 'answered-marked': 'bg-indigo-600 text-white rounded-full relative after:content-[""] after:absolute after:bottom-0 after:right-0 after:w-3 after:h-3 after:bg-green-500 after:rounded-full after:border-2 after:border-white'
                             };
                             return (
                                 <button 
                                     key={i} 
                                     onClick={() => setActiveQuestion(i)} 
-                                    className={`h-10 w-10 flex items-center justify-center font-bold text-xs transition-all hover:scale-110 active:scale-90 ${shapes[status]} ${activeQuestion === i ? 'ring-2 ring-blue-400 ring-offset-2' : ''}`}
+                                    className={`h-9 w-9 flex items-center justify-center font-bold text-[10px] transition-all hover:brightness-110 ${shapes[status]} ${activeQuestion === i ? 'ring-2 ring-blue-500 ring-offset-1' : ''}`}
                                 >
-                                    {i+1}
+                                    {i + 1}
                                 </button>
                             );
                         })}
                     </div>
                 </div>
-            </div>
 
-            <div className="mt-8 bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-center gap-3">
-                <Info className="w-5 h-5 text-blue-600 shrink-0" />
-                <p className="text-[9px] font-bold text-blue-800 leading-tight italic uppercase">Candidate is advised to frequently Refresh the portal if question lag occurs.</p>
+                <div className="p-3 bg-blue-50 border border-blue-100 rounded text-[9px] font-bold text-blue-700 leading-tight">
+                    NOTE: QUESTIONS MARKED FOR REVIEW WILL BE CONSIDERED FOR EVALUATION IF ANSWERED.
+                </div>
             </div>
           </div>
         </div>
