@@ -38,7 +38,13 @@ export const ActiveExamConsole: React.FC<ActiveExamConsoleProps> = ({
   const [showCalculator, setShowCalculator] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
   const [pdfScale, setPdfScale] = useState(1.25);
-  const [viewMode, setViewMode] = useState<'pdf' | 'text'>('pdf');
+  const hasActivePdf = !!pdfFiles[activeSubject];
+  const [viewMode, setViewMode] = useState<'pdf' | 'text'>(hasActivePdf ? 'pdf' : 'text');
+
+  // Auto-sync viewMode based on PDF availability when activeSubject changes
+  useEffect(() => {
+    setViewMode(pdfFiles[activeSubject] ? 'pdf' : 'text');
+  }, [activeSubject, pdfFiles]);
 
   const [proctorLock, setProctorLock] = useState(false);
   const [proctorAttempts, setProctorAttempts] = useState(0);
@@ -518,20 +524,26 @@ export const ActiveExamConsole: React.FC<ActiveExamConsoleProps> = ({
             </div>
 
             {/* View Mode Switcher */}
-            <div className="bg-slate-950 border border-slate-800 p-1 rounded-xl flex">
-              <button 
-                onClick={() => setViewMode('pdf')}
-                className={`px-3 py-1 rounded-lg text-[10px] tracking-wider uppercase font-bold transition-all ${viewMode === 'pdf' ? 'bg-cyber-blue text-slate-950' : 'text-slate-400 hover:text-white'}`}
-              >
-                📄 High-Res PDF
-              </button>
-              <button 
-                onClick={() => setViewMode('text')}
-                className={`px-3 py-1 rounded-lg text-[10px] tracking-wider uppercase font-bold transition-all ${viewMode === 'text' ? 'bg-cyber-blue text-slate-950' : 'text-slate-400 hover:text-white'}`}
-              >
-                📝 Extracted Text
-              </button>
-            </div>
+            {hasActivePdf ? (
+              <div className="bg-slate-950 border border-slate-800 p-1 rounded-xl flex">
+                <button 
+                  onClick={() => setViewMode('pdf')}
+                  className={`px-3 py-1 rounded-lg text-[10px] tracking-wider uppercase font-bold transition-all ${viewMode === 'pdf' ? 'bg-cyber-blue text-slate-950' : 'text-slate-400 hover:text-white'}`}
+                >
+                  📄 High-Res PDF
+                </button>
+                <button 
+                  onClick={() => setViewMode('text')}
+                  className={`px-3 py-1 rounded-lg text-[10px] tracking-wider uppercase font-bold transition-all ${viewMode === 'text' ? 'bg-cyber-blue text-slate-950' : 'text-slate-400 hover:text-white'}`}
+                >
+                  📝 Extracted Text
+                </button>
+              </div>
+            ) : (
+              <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-3.5 py-1.5 rounded-xl text-[10px] uppercase font-bold tracking-wider">
+                📝 Digital Exam Text (डिजिटल टेक्स्ट मोड)
+              </span>
+            )}
           </div>
 
           {/* Renders corresponding mode */}

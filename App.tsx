@@ -86,6 +86,98 @@ const AppContent: React.FC = () => {
   const [uploadedFileName, setUploadedFileName] = useState<string>('');
   const [allResults, setAllResults] = useState<any[]>([]);
 
+  // Input states for Mode A vs Mode B
+  const [ingestMode, setIngestMode] = useState<'pdf' | 'text'>('pdf');
+  const [pastedText, setPastedText] = useState<string>('');
+  const [textError, setTextError] = useState<string>('');
+
+  const handleTextExtract = async () => {
+    if (!pastedText.trim()) {
+      setTextError("Please paste some questions or paper text. (कृपया कोई प्रश्न या टेक्स्ट यहाँ पेस्ट करें।)");
+      return;
+    }
+    setTextError('');
+    setAiLoading(true);
+    // Clear any previous PDFs, as they are using text mode
+    setPdfFiles({});
+    setUploadedFileName('Pasted_Plain_Text_Paper.txt');
+
+    try {
+      const apiResponse = await fetch("/api/extract-text", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          rawText: pastedText,
+          subjects
+        })
+      });
+
+      if (!apiResponse.ok) {
+        const errorData = await apiResponse.json();
+        throw new Error(errorData.error || `Server returned error status ${apiResponse.status}`);
+      }
+
+      const dataResult = await apiResponse.json();
+      const parsedQuestions = dataResult.questions || [];
+
+      const grouped: Record<string, any[]> = {};
+      subjects.forEach(sub => {
+        grouped[sub] = [];
+      });
+
+      parsedQuestions.forEach((q: any) => {
+        const subName = q.subject || '';
+        const matchedSub = subjects.find(s => s.toLowerCase() === subName.toLowerCase()) || subjects[0];
+        if (matchedSub) {
+          grouped[matchedSub].push({
+            question: q.question,
+            options: q.options || ["A", "B", "C", "D"],
+            correct: typeof q.correct === 'number' ? q.correct : 0,
+            page: typeof q.page === 'number' ? q.page : 1
+          });
+        }
+      });
+
+      // Seeding backup content if one of the subjects didn't get any parsed questions
+      subjects.forEach(sub => {
+        if (!grouped[sub] || grouped[sub].length === 0) {
+          let mockSet = MathQuestions;
+          if (sub.toLowerCase() === 'physics') mockSet = PhysicsQuestions;
+          else if (sub.toLowerCase() === 'chemistry') mockSet = ChemistryQuestions;
+          else if (sub.toLowerCase() === 'biology') mockSet = BiologyQuestions;
+
+          grouped[sub] = scatterQuestionsList(mockSet).map((q, qIdx) => ({
+            ...q,
+            page: (qIdx % 4) + 1
+          }));
+        }
+      });
+
+      setSubjectQuestions(grouped);
+
+    } catch (err: any) {
+      console.error("Gemini text parsing failed:", err);
+      setTextError(err?.message || "Failed to extract from text. Using high-fidelity fallback.");
+      const grouped: Record<string, any[]> = {};
+      subjects.forEach(sub => {
+        let mockSet = MathQuestions;
+        if (sub.toLowerCase() === 'physics') mockSet = PhysicsQuestions;
+        else if (sub.toLowerCase() === 'chemistry') mockSet = ChemistryQuestions;
+        else if (sub.toLowerCase() === 'biology') mockSet = BiologyQuestions;
+
+        grouped[sub] = scatterQuestionsList(mockSet).map((q, qIdx) => ({
+          ...q,
+          page: (qIdx % 4) + 1
+        }));
+      });
+      setSubjectQuestions(grouped);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   // Function to load the sample PDF and pre-packaged questions
   const loadMockSampleExamPack = () => {
     setAiLoading(true);
@@ -198,14 +290,21 @@ const AppContent: React.FC = () => {
       const arrayBuffer = await file.arrayBuffer();
       const bytes = new Uint8Array(arrayBuffer);
 
-      // Store this single PDF for all current subjects
+      // Store separate cloned copies of the Uint8Array to prevent PDF.js from detaching the shared underlying ArrayBuffer
       const updatedPdfs: Record<string, Uint8Array> = {};
       subjects.forEach(sub => {
-        updatedPdfs[sub] = bytes;
+        updatedPdfs[sub] = new Uint8Array(bytes);
       });
       setPdfFiles(updatedPdfs);
 
-      const fileB64 = await fileToBase64(file);
+      // Convert the Uint8Array bytes to Base64 safely in-memory without double-reading the file from disk/browser
+      let binary = "";
+      const chunkSize = 0xffff;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.subarray(i, i + chunkSize);
+        binary += String.fromCharCode.apply(null, chunk as any);
+      }
+      const fileB64 = window.btoa(binary);
 
       // Call secure backend proxy API
       const apiResponse = await fetch("/api/extract", {
@@ -400,53 +499,131 @@ const AppContent: React.FC = () => {
           </div>
 
           <div className="space-y-6">
-            {/* Unified Drag-and-Drop / File input Card */}
-            <div className={`border-2 border-dashed rounded-[24px] p-8 text-center transition-all ${uploadedFileName ? 'border-cyber-green/50 bg-cyber-green/5' : 'border-slate-800 hover:border-slate-700 bg-slate-950/20'}`}>
-              <div className="max-w-md mx-auto space-y-4">
-                <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-slate-400">
-                  <span className="text-xl">📄</span>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-black text-white uppercase tracking-wider">
-                    {uploadedFileName ? '✓ Document Loaded Successfully' : 'Select Unified Question Paper PDF'}
-                  </p>
-                  <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest leading-relaxed">
-                    {uploadedFileName 
-                      ? `Active File: ${uploadedFileName}` 
-                      : 'Upload one comprehensive PDF containing all examination streams'}
-                  </p>
-                </div>
+            {/* INGESTION MODE SELECTOR TABS */}
+            <div className="bg-slate-950/40 p-1.5 rounded-2xl border border-slate-800 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIngestMode('pdf');
+                  setPastedText('');
+                  setTextError('');
+                }}
+                className={`flex-1 py-3 rounded-xl text-xs font-orbitron font-black tracking-wider uppercase transition-all flex items-center justify-center gap-2 ${
+                  ingestMode === 'pdf'
+                    ? 'bg-cyber-blue text-slate-950 shadow-[0_0_15px_rgba(0,243,255,0.2)] font-black'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900/35'
+                }`}
+              >
+                <span>📄 PDF Question Paper (ऑप्शन १)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIngestMode('text');
+                  setPdfFiles({});
+                  setUploadedFileName('');
+                  setTextError('');
+                }}
+                className={`flex-1 py-3 rounded-xl text-xs font-orbitron font-black tracking-wider uppercase transition-all flex items-center justify-center gap-2 ${
+                  ingestMode === 'text'
+                    ? 'bg-cyber-blue text-slate-950 shadow-[0_0_15px_rgba(0,243,255,0.2)] font-black'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900/35'
+                }`}
+              >
+                <span>📝 Copy-Paste Text (ऑप्शन २)</span>
+              </button>
+            </div>
 
-                <div className="flex justify-center gap-3">
-                  <label className={`px-5 py-2.5 rounded-xl font-orbitron font-black text-[10px] tracking-widest cursor-pointer transition-all uppercase ${uploadedFileName ? 'bg-slate-900 border border-slate-805 text-slate-400 hover:text-white' : 'bg-cyber-blue hover:bg-cyan-400 text-slate-950 shadow-[0_0_12px_rgba(0,243,255,0.2)]'}`}>
-                    {uploadedFileName ? 'Change PDF File' : 'Select PDF File'}
-                    <input 
-                      type="file" 
-                      accept="application/pdf" 
-                      className="hidden" 
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handleUnifiedPdfExtract(file);
-                      }}
-                    />
-                  </label>
+            {ingestMode === 'pdf' ? (
+              /* Unified Drag-and-Drop / File input Card */
+              <div className={`border-2 border-dashed rounded-[24px] p-8 text-center transition-all ${uploadedFileName ? 'border-cyber-green/50 bg-cyber-green/5' : 'border-slate-800 hover:border-slate-700 bg-slate-950/20'}`}>
+                <div className="max-w-md mx-auto space-y-4">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-slate-400">
+                    <span className="text-xl">📄</span>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-black text-white uppercase tracking-wider">
+                      {uploadedFileName ? '✓ Document Loaded Successfully' : 'Select Unified Question Paper PDF'}
+                    </p>
+                    <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest leading-relaxed">
+                      {uploadedFileName 
+                        ? `Active File: ${uploadedFileName}` 
+                        : 'Upload one comprehensive PDF containing all examination streams'}
+                    </p>
+                  </div>
 
-                  {uploadedFileName && (
-                    <button 
-                      type="button"
-                      onClick={() => {
-                        setPdfFiles({});
-                        setSubjectQuestions({});
-                        setUploadedFileName('');
-                      }}
-                      className="px-5 py-2.5 bg-red-950 border border-red-900/40 text-red-400 hover:text-red-300 rounded-xl font-orbitron font-black text-[10px] tracking-widest transition-colors uppercase"
-                    >
-                      Clear File
-                    </button>
-                  )}
+                  <div className="flex justify-center gap-3">
+                    <label className={`px-5 py-2.5 rounded-xl font-orbitron font-black text-[10px] tracking-widest cursor-pointer transition-all uppercase ${uploadedFileName ? 'bg-slate-900 border border-slate-805 text-slate-400 hover:text-white' : 'bg-cyber-blue hover:bg-cyan-400 text-slate-950 shadow-[0_0_12px_rgba(0,243,255,0.2)]'}`}>
+                      {uploadedFileName ? 'Change PDF File' : 'Select PDF File'}
+                      <input 
+                        type="file" 
+                        accept="application/pdf" 
+                        className="hidden" 
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleUnifiedPdfExtract(file);
+                        }}
+                      />
+                    </label>
+
+                    {uploadedFileName && (
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setPdfFiles({});
+                          setSubjectQuestions({});
+                          setUploadedFileName('');
+                        }}
+                        className="px-5 py-2.5 bg-red-950 border border-red-900/40 text-red-400 hover:text-red-300 rounded-xl font-orbitron font-black text-[10px] tracking-widest transition-colors uppercase"
+                      >
+                        Clear File
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              /* Plain Text paste console card */
+              <div className="bg-slate-950/45 border border-slate-800/85 rounded-[24px] p-6 space-y-4 text-left">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-sm font-black text-white uppercase tracking-wider">Paste Exam Paper Content (यहाँ प्रश्न पेपर पेस्ट करें)</h3>
+                  <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest leading-relaxed">
+                    Paste mock questions, text-sets, or raw paragraphs here. Our AI engine compiles and sorts them automatically into structured subjects.
+                  </p>
+                </div>
+
+                <textarea
+                  value={pastedText}
+                  onChange={(e) => setPastedText(e.target.value)}
+                  placeholder={`यहाँ अपना प्रश्न पत्र और विकल्प पेस्ट करें...\nउदाहरण:-\n\nQ1. What is the derivative of sin(x)?\nA) cos(x)\nB) -cos(x)\nC) tan(x)\nD) sec(x)\n\nQ2. Nitrogen bonding structure pH of human blood...`}
+                  className="w-full h-52 bg-slate-900 border border-slate-800 rounded-xl p-4 text-sm text-slate-200 placeholder-slate-700 focus:outline-none focus:border-cyber-blue focus:ring-1 focus:ring-cyber-blue font-mono transition-colors"
+                />
+
+                {textError && (
+                  <p className="text-xs text-red-400 font-semibold bg-red-950/30 border border-red-900/40 p-3.5 rounded-xl">{textError}</p>
+                )}
+
+                <div className="flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPastedText("");
+                      setTextError("");
+                    }}
+                    className="px-5 py-2.5 bg-slate-900 border border-slate-850 text-slate-400 hover:text-white rounded-xl font-orbitron font-black text-[10px] tracking-widest transition-colors uppercase"
+                  >
+                    Clear Text
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleTextExtract}
+                    className="px-6 py-2.5 bg-cyber-blue hover:bg-cyan-400 text-slate-950 shadow-[0_0_12px_rgba(0,243,255,0.25)] rounded-xl font-orbitron font-black text-[10px] tracking-widest transition-all uppercase"
+                  >
+                    ✨ Extract From Text / प्रश्न एक्सट्रेक्ट करें
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Ingestion stream compartments display */}
             <div className="space-y-3">

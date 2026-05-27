@@ -119,8 +119,19 @@ Extract absolutely all of them. Do not be lazy. You are rewarded for complete ex
 
       const responseText = response.text ? response.text.trim() : "";
       
+      let cleanJson = responseText;
+      if (cleanJson.startsWith("```json")) {
+        cleanJson = cleanJson.substring(7);
+      } else if (cleanJson.startsWith("```")) {
+        cleanJson = cleanJson.substring(3);
+      }
+      if (cleanJson.endsWith("```")) {
+        cleanJson = cleanJson.substring(0, cleanJson.length - 3);
+      }
+      cleanJson = cleanJson.trim();
+
       try {
-        const parsedQuestions = JSON.parse(responseText);
+        const parsedQuestions = JSON.parse(cleanJson);
         return res.json({ success: true, questions: parsedQuestions });
       } catch (parseErr: any) {
         console.error("Failed to parse AI output as JSON. Raw output:", responseText);
@@ -133,6 +144,128 @@ Extract absolutely all of them. Do not be lazy. You are rewarded for complete ex
     } catch (err: any) {
       console.error("Gemini server-side error:", err);
       // Propagate exact message or error details back to the client
+      const errMsg = err?.message || String(err);
+      return res.status(500).json({ 
+        error: errMsg,
+        details: err?.status || err?.code ? { code: err.code, status: err.status } : undefined
+      });
+    }
+  });
+
+  app.post("/api/extract-text", async (req, res) => {
+    const { rawText, subjects } = req.body;
+
+    if (!rawText || !rawText.trim()) {
+      return res.status(400).json({ error: "Missing plain text in request" });
+    }
+
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) {
+      return res.status(400).json({ 
+        error: "GEMINI_API_KEY environment variable is not configured. Please define it in your AI Studio Secrets panel." 
+      });
+    }
+
+    try {
+      const ai = new GoogleGenAI({
+        apiKey: key,
+        httpOptions: {
+          headers: {
+            "User-Agent": "aistudio-build",
+          }
+        }
+      });
+
+      const subjectsList = Array.isArray(subjects) ? subjects : ["Physics", "Chemistry", "Biology"];
+
+      // Process raw text with Gemini
+      const modelName = "gemini-3.5-flash";
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: `You are an expert exam paper parsing agent.
+Analyze this raw pasted exam paper text. Extract EVERY SINGLE multiple-choice question (MCQ) contained in the text.
+
+CRITICAL INSTRUCTIONS:
+1. Do NOT skip any question. Fully extract every MCQ.
+2. Each question belongs to one of the following subject compartments: ${subjectsList.join(', ')}. Categorize each question into the correct subject compartment based on its context (e.g. Physics, Chemistry, Biology, Mathematics).
+3. Return exactly 4 options. Clean any option labels (e.g., "A) Option" -> "Option", "(a) Content" -> "Content").
+4. Identify the correct option index (0 to 3 corresponding to options 0-3).
+5. Set "page" to 1 for all extracted questions.
+6. Render mathematical equations, formulas, and scientific notations beautifully in standard readable text format.
+
+Raw Pasted Exam Paper Text:
+${rawText}`
+              }
+            ]
+          }
+        ],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.ARRAY,
+            description: "A complete exhaustively-extracted list of all multiple-choice questions from the plain text.",
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                subject: {
+                  type: Type.STRING,
+                  description: "Subject name exactly matching one of the requested compartments"
+                },
+                question: {
+                  type: Type.STRING,
+                  description: "Full descriptive text of the question"
+                },
+                options: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: "Exactly 4 options"
+                },
+                correct: {
+                  type: Type.INTEGER,
+                  description: "0-based integer index of the correct option (0-3)"
+                },
+                page: {
+                  type: Type.INTEGER,
+                  description: "Constant integer 1"
+                }
+              },
+              required: ["subject", "question", "options", "correct", "page"]
+            }
+          }
+        }
+      });
+
+      const responseText = response.text ? response.text.trim() : "";
+      
+      let cleanJson = responseText;
+      if (cleanJson.startsWith("```json")) {
+        cleanJson = cleanJson.substring(7);
+      } else if (cleanJson.startsWith("```")) {
+        cleanJson = cleanJson.substring(3);
+      }
+      if (cleanJson.endsWith("```")) {
+        cleanJson = cleanJson.substring(0, cleanJson.length - 3);
+      }
+      cleanJson = cleanJson.trim();
+
+      try {
+        const parsedQuestions = JSON.parse(cleanJson);
+        return res.json({ success: true, questions: parsedQuestions });
+      } catch (parseErr: any) {
+        console.error("Failed to parse text AI output as JSON. Raw output:", responseText);
+        return res.status(500).json({
+          error: "AI output could not be parsed as valid JSON. Please simplify or review your text.",
+          rawOutput: responseText
+        });
+      }
+
+    } catch (err: any) {
+      console.error("Gemini text extract server-side error:", err);
       const errMsg = err?.message || String(err);
       return res.status(500).json({ 
         error: errMsg,
