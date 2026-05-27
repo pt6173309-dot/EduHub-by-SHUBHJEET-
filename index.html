@@ -4,18 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>EduHub - Sci-Fi Learning Platform</title>
-    <!-- PDF.js CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
-    <script>
-      // Configure global pdfjsLib reference
-      window.pdfjsLib = window['pdfjs-dist/build/pdf'];
-      if (window.pdfjsLib) {
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
-      }
-    </script>
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&family=Michroma&family=Audiowide&family=Exo+2:wght@100;200;300;400;500;600;700;800;900&display=swap');
       @import "tailwindcss";
+
       @theme {
         --font-orbitron: "Orbitron", sans-serif;
         --font-rajdhani: "Rajdhani", sans-serif;

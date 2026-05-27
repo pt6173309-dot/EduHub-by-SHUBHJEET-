@@ -1,6 +1,5 @@
 {
   "name": "CUET 2026 Prediction & Practice Hub",
   "description": "Professional CUET examination simulation center with AI-powered question extraction from images, proctored environment, and NTA-styled practice dashboard.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "requestFramePermissions": []
 }
