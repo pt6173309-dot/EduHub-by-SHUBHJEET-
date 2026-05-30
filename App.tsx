@@ -1322,10 +1322,11 @@ const TeacherDashboard = ({
 
 const AppContent: React.FC = () => {
   // Exam Hub state
-  const [examType, setExamType] = useState<'cuet' | 'neet' | 'jee' | null>(null);
+  const [examType, setExamType] = useState<'cuet' | 'neet' | 'jee' | 'nest' | null>(null);
   const [cuetStatus, setCuetStatus] = useState<'selection' | 'upload' | 'instructions' | 'exam' | 'terminated' | 'finished'>('selection');
   const [cuetQuestions, setCuetQuestions] = useState<any[]>([]);
   const [neetData, setNeetData] = useState<Record<string, any[]>>({ 'Physics': [], 'Chemistry': [], 'Biology': [] });
+  const [nestData, setNestData] = useState<Record<string, any[]>>({ 'Biology': [], 'Chemistry': [], 'Physics': [] });
   const [activeNeetSubject, setActiveNeetSubject] = useState<string>('Physics');
   const [cuetAnswers, setCuetAnswers] = useState<Record<number, string>>({});
   const [cuetStatusMap, setCuetStatusMap] = useState<Record<number, 'not-visited' | 'not-answered' | 'answered' | 'marked' | 'answered-marked'>>({});
@@ -1337,6 +1338,90 @@ const AppContent: React.FC = () => {
 
   // Auto-fill candidate name
   const candidateName = "PALLAVI";
+
+  const handleNestTextUpload = async (subject: string, pastedText: string) => {
+    const apiKey = process.env.GEMINI_API_KEY || (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY);
+    if (!apiKey) { alert("AI Service is currently unavailable. Please ensure GEMINI_API_KEY is set."); return; }
+    if (!pastedText.trim()) { alert("Please paste some text first."); return; }
+
+    setIsAiLoading(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `You are an AI that extracts exam questions specifically for the NEST Exam (National Entrance Screening Test).
+      Extract all multiple choice questions for the section ${subject} from the following text. 
+      Format each question as an object with:
+      1. question: the full text of the question
+      2. options: an array of EXACTLY 4 strings
+      3. correct: the index (0-3) of the correct answer (if marked, or deduce if possible. If you can't deduce the correct answer, pick index 0 as default)
+      
+      Text to process:
+      ${pastedText}
+      
+      Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "correct": 0}]. If none found, return [].`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: [{ parts: [{ text: prompt }] }],
+      });
+      const text = response.text;
+      const jsonMatch = text ? text.match(/\[[\s\S]*\]/) : null;
+      if (jsonMatch) {
+        const extracted = JSON.parse(jsonMatch[0]);
+        if (extracted.length > 0) {
+          // NEST Exam structure has exactly 20 questions per section. Limit to 20.
+          const slicedExtracted = extracted.slice(0, 20);
+          setNestData(prev => ({ ...prev, [subject]: slicedExtracted }));
+          alert(`${slicedExtracted.length} questions extracted for NEST ${subject}.`);
+        } else {
+          alert(`No questions found for ${subject}.`);
+        }
+      } else {
+        alert("Failed to parse questions from AI response. Please try again with clear question text.");
+      }
+    } catch (error: any) {
+      console.error('NEST Extraction Error:', error);
+      alert('Failed: ' + error.message);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const startNestSimulation = () => {
+    const allQs: any[] = [];
+    const subjects = ['Biology', 'Chemistry', 'Physics'];
+    let filledSectionsCount = 0;
+    let firstAvailableSubject = 'Biology';
+    let foundFirst = false;
+
+    subjects.forEach(sub => {
+      const qs = nestData[sub] || [];
+      if (qs.length > 0) {
+        filledSectionsCount++;
+        if (!foundFirst) {
+          firstAvailableSubject = sub;
+          foundFirst = true;
+        }
+        qs.forEach((q, idx) => {
+          allQs.push({ ...q, subject: sub, sectionIndex: idx });
+        });
+      }
+    });
+
+    if (allQs.length === 0) {
+      alert("Please upload and extract questions for subjects first.");
+      return;
+    }
+
+    setCuetQuestions(allQs);
+    setCuetAnswers({});
+    setCuetStatusMap({});
+    setActiveNeetSubject(firstAvailableSubject);
+
+    // Dynamic timer: 1 hour per section, max 3 hours (10800 seconds)
+    const duration = filledSectionsCount * 3600;
+    setCuetTimeLeft(duration);
+    setCuetStatus('instructions');
+  };
 
   const handleNeetTextUpload = async (subject: string, pastedText: string) => {
     const apiKey = process.env.GEMINI_API_KEY || (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY);
@@ -1362,7 +1447,7 @@ const AppContent: React.FC = () => {
         contents: [{ parts: [{ text: prompt }] }],
       });
       const text = response.text;
-      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      const jsonMatch = text ? text.match(/\[[\s\S]*\]/) : null;
       if (jsonMatch) {
         const extracted = JSON.parse(jsonMatch[0]);
         if (extracted.length > 0) {
@@ -1562,6 +1647,9 @@ const AppContent: React.FC = () => {
           setCuetStatusMap={setCuetStatusMap}
           neetOmrFilled={neetOmrFilled}
           setNeetOmrFilled={setNeetOmrFilled}
+          nestData={nestData}
+          handleNestTextUpload={handleNestTextUpload}
+          startNestSimulation={startNestSimulation}
         />
       </div>
       <footer className="py-8 border-t border-slate-900">
@@ -1582,13 +1670,17 @@ const CUETExamView = ({
   handleCuetImageUpload, handleCuetTextUpload, handleNeetTextUpload,
   neetData, startNeetSimulation, activeNeetSubject, setActiveNeetSubject,
   isAiLoading, cuetStatusMap, setCuetStatusMap,
-  neetOmrFilled, setNeetOmrFilled
+  neetOmrFilled, setNeetOmrFilled,
+  nestData, handleNestTextUpload, startNestSimulation
 }: any) => {
   const [activeQuestion, setActiveQuestion] = useState(0);
   const [unlockCode, setUnlockCode] = useState('');
   const [pastedText, setPastedText] = useState('');
   const [neetPastedTexts, setNeetPastedTexts] = useState<Record<string, string>>({
     'Physics': '', 'Chemistry': '', 'Biology': ''
+  });
+  const [nestPastedTexts, setNestPastedTexts] = useState<Record<string, string>>({
+    'Biology': '', 'Chemistry': '', 'Physics': ''
   });
   const [omrError, setOmrError] = useState<string | null>(null);
 
@@ -1646,7 +1738,7 @@ const CUETExamView = ({
     
     // NEET Marking: +4, -1, 0
     // CUET Marking: +5, -1, 0
-    const correctScore = examType === 'neet' ? 4 : 5;
+    const correctScore = examType === 'neet' ? 4 : examType === 'nest' ? 4 : 5;
     const incorrectPenalty = 1;
 
     const detailedResults = cuetQuestions.map((q: any, idx: number) => {
@@ -1685,12 +1777,12 @@ const CUETExamView = ({
   if (cuetStatus === 'selection') {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
-        <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="max-w-6xl w-full grid grid-cols-1 md:grid-cols-3 gap-8">
           <motion.button 
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={() => { setExamType('cuet'); setCuetStatus('upload'); }}
-            className="bg-white p-12 rounded-[40px] text-center space-y-6 shadow-2xl border-4 border-transparent hover:border-blue-500 transition-all"
+            className="bg-white p-12 rounded-[40px] text-center space-y-6 shadow-2xl border-4 border-transparent hover:border-blue-500 transition-all flex flex-col justify-between"
           >
             <div className="w-20 h-20 bg-blue-100 rounded-3xl flex items-center justify-center mx-auto">
               <GraduationCap className="w-10 h-10 text-blue-600" />
@@ -1705,7 +1797,7 @@ const CUETExamView = ({
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={() => { setExamType('neet'); setCuetStatus('upload'); }}
-            className="bg-white p-12 rounded-[40px] text-center space-y-6 shadow-2xl border-4 border-transparent hover:border-red-500 transition-all"
+            className="bg-white p-12 rounded-[40px] text-center space-y-6 shadow-2xl border-4 border-transparent hover:border-red-500 transition-all flex flex-col justify-between"
           >
             <div className="w-20 h-20 bg-red-100 rounded-3xl flex items-center justify-center mx-auto">
               <TrendingUp className="w-10 h-10 text-red-600" />
@@ -1713,6 +1805,21 @@ const CUETExamView = ({
             <div>
               <h3 className="text-3xl font-black text-slate-900 tracking-tighter">NEET UG</h3>
               <p className="text-slate-500 font-bold uppercase text-xs mt-2 tracking-widest">National Eligibility cum Entrance Test</p>
+            </div>
+          </motion.button>
+
+          <motion.button 
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => { setExamType('nest'); setCuetStatus('upload'); }}
+            className="bg-white p-12 rounded-[40px] text-center space-y-6 shadow-2xl border-4 border-transparent hover:border-emerald-500 transition-all flex flex-col justify-between"
+          >
+            <div className="w-20 h-20 bg-emerald-100 rounded-3xl flex items-center justify-center mx-auto">
+              <Monitor className="w-10 h-10 text-emerald-600" />
+            </div>
+            <div>
+              <h3 className="text-3xl font-black text-slate-900 tracking-tighter">NEST Exam</h3>
+              <p className="text-slate-500 font-bold uppercase text-xs mt-2 tracking-widest">National Entrance Screening Test</p>
             </div>
           </motion.button>
         </div>
@@ -1728,7 +1835,7 @@ const CUETExamView = ({
     // Header
     doc.setFontSize(22);
     doc.setTextColor(0, 51, 153);
-    doc.text(`${examType === 'neet' ? 'NEET UG' : 'CUET'} 2026 PRACTICE PORTAL`, pageWidth / 2, y, { align: 'center' });
+    doc.text(`${examType === 'neet' ? 'NEET UG' : examType === 'nest' ? 'NEST Exam' : 'CUET'} 2026 PRACTICE PORTAL`, pageWidth / 2, y, { align: 'center' });
     y += 10;
     doc.setFontSize(14);
     doc.setTextColor(100);
@@ -1743,7 +1850,7 @@ const CUETExamView = ({
     doc.setTextColor(0);
     doc.setFont("helvetica", "bold");
     doc.text(`Candidate Name: ${currentUser?.name || "PALLAVI"}`, 20, y);
-    doc.text(`Exam ID: ${examType === 'neet' ? 'NEET' : 'CUET'}2026-X7Y`, 150, y);
+    doc.text(`Exam ID: ${examType === 'neet' ? 'NEET' : examType === 'nest' ? 'NEST' : 'CUET'}2026-X7Y`, 150, y);
     y += 10;
     doc.text(`Total Score: ${cuetResult?.score} / ${cuetResult?.total}`, 20, y);
     doc.text(`Date: ${new Date().toLocaleDateString()}`, 150, y);
@@ -1932,6 +2039,84 @@ const CUETExamView = ({
   }
 
   if (cuetStatus === 'upload') {
+    if (examType === 'nest') {
+      return (
+        <div className="max-w-4xl mx-auto py-12 space-y-8 px-4">
+          <div className="text-center space-y-4">
+            <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">NEST EXAM SIMULATOR</h2>
+            <p className="text-emerald-600 font-bold text-xs tracking-widest uppercase">Multi-Section Question Injection</p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {['Biology', 'Chemistry', 'Physics'].map(sub => (
+              <div key={sub} className="bg-white p-6 rounded-3xl border border-slate-200 space-y-4 shadow-xl flex flex-col justify-between">
+                <div className="space-y-3">
+                  <h3 className="font-orbitron font-black text-sm text-slate-800 uppercase tracking-widest">{sub} SECTION</h3>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-normal">
+                    Upload or paste your question text here
+                  </label>
+                  <textarea 
+                    value={nestPastedTexts[sub]}
+                    onChange={(e) => setNestPastedTexts({...nestPastedTexts, [sub]: e.target.value})}
+                    placeholder="Upload or paste your question text here"
+                    className="w-full h-48 p-4 bg-slate-50 border rounded-2xl text-xs font-mono outline-none focus:border-emerald-500 transition-all leading-relaxed"
+                  />
+                </div>
+                <div className="space-y-3 mt-4">
+                  <button 
+                    onClick={() => handleNestTextUpload(sub, nestPastedTexts[sub])}
+                    disabled={isAiLoading || !nestPastedTexts[sub].trim()}
+                    className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                  >
+                    {isAiLoading ? 'Analyzing...' : `Extract ${sub}`}
+                  </button>
+                  <div className="text-center">
+                    <p className="text-[10px] font-bold text-slate-400">
+                      {nestData[sub]?.length || 0} / 20 Questions Ready
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200">
+            <h4 className="text-xs font-black text-slate-500 uppercase tracking-wider mb-2">DYNAMIC EXAM PARAMETERS</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="bg-white p-4 rounded-xl border border-slate-200">
+                <span className="text-[9px] font-black text-slate-400 uppercase font-bold">Uploaded Sections</span>
+                <p className="text-sm font-black text-slate-800 tracking-tight">
+                  {['Biology', 'Chemistry', 'Physics'].filter(sub => (nestData[sub]?.length || 0) > 0).join(', ') || 'No sections ready'}
+                </p>
+              </div>
+              <div className="bg-white p-4 rounded-xl border border-slate-200">
+                <span className="text-[9px] font-black text-slate-400 uppercase font-bold">Calculated Exam Duration</span>
+                <p className="text-sm font-black text-emerald-600 uppercase tracking-tight">
+                  {(() => {
+                    const filledCount = ['Biology', 'Chemistry', 'Physics'].filter(sub => (nestData[sub]?.length || 0) > 0).length;
+                    if (filledCount === 0) return '0 minutes (Add questions)';
+                    return `${filledCount} hour${filledCount > 1 ? 's' : ''} (${filledCount * 60} minutes)`;
+                  })()}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <button 
+            onClick={startNestSimulation}
+            className="w-full bg-emerald-600 text-white font-black py-6 rounded-[30px] uppercase text-xl sm:text-2xl shadow-2xl hover:bg-emerald-700 transition-all flex items-center justify-center gap-4 hover:shadow-emerald-500/10 active:scale-[0.99]"
+          >
+            <Zap className="w-8 h-8" />
+            INITIALIZE TEST ENVIRONMENT
+          </button>
+          
+          <div className="text-center">
+            <button onClick={() => setCuetStatus('selection')} className="text-slate-400 font-bold text-xs uppercase underline hover:text-slate-900 transition-all">Back to Selection</button>
+          </div>
+        </div>
+      );
+    }
+
     if (examType === 'neet') {
       return (
         <div className="max-w-4xl mx-auto py-12 space-y-8 px-4">
@@ -2073,10 +2258,14 @@ const CUETExamView = ({
     };
 
     // Subject filtering for Navigation Palette
-    const subjects = examType === 'neet' ? ['Physics', 'Chemistry', 'Biology'] : ['General Test'];
-    const filteredQuestions = examType === 'neet' 
-        ? cuetQuestions.map((q, i) => ({...q, originalIndex: i})).filter(q => q.subject === activeNeetSubject)
-        : cuetQuestions.map((q, i) => ({...q, originalIndex: i}));
+    const subjects = examType === 'nest'
+        ? ['Biology', 'Chemistry', 'Physics'].filter((sub: string) => cuetQuestions.some((q: any) => q.subject === sub))
+        : examType === 'neet' 
+        ? ['Physics', 'Chemistry', 'Biology'] 
+        : ['General Test'];
+    const filteredQuestions = (examType === 'neet' || examType === 'nest')
+        ? cuetQuestions.map((q: any, i: number) => ({...q, originalIndex: i})).filter((q: any) => q.subject === activeNeetSubject)
+        : cuetQuestions.map((q: any, i: number) => ({...q, originalIndex: i}));
 
     const StatusBadge = ({ type, count, label }: { type: any, count: number, label: string }) => {
         const shapes: any = {
@@ -2121,7 +2310,9 @@ const CUETExamView = ({
             </div>
             <div className="text-center border-r pr-4 sm:pr-6">
                 <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Subject Name</p>
-                <p className="text-xs font-black text-blue-600 uppercase tracking-tight">{examType === 'neet' ? 'NEET UG 2026' : 'CUET 2026'}</p>
+                <p className="text-xs font-black text-blue-600 uppercase tracking-tight">
+                  {examType === 'neet' ? 'NEET UG 2026' : examType === 'nest' ? 'NEST Exam 2026' : 'CUET 2026'}
+                </p>
             </div>
             <div className="text-center">
                 <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Time Left</p>
@@ -2138,7 +2329,7 @@ const CUETExamView = ({
                         key={sub}
                         onClick={() => {
                             setActiveNeetSubject(sub);
-                            const firstInSub = cuetQuestions.findIndex(q => q.subject === sub);
+                            const firstInSub = cuetQuestions.findIndex((q: any) => q.subject === sub);
                             if (firstInSub !== -1) setActiveQuestion(firstInSub);
                         }}
                         className={`${activeNeetSubject === sub || examType === 'cuet' ? 'bg-blue-600 text-white' : 'bg-white/20 text-white/80 hover:bg-white/30'} px-6 py-2.5 rounded-t-lg font-black text-xs uppercase shadow-lg transition-all`}
