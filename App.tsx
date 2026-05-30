@@ -31,6 +31,8 @@ import {
   Info,
   Clock,
   CheckCircle2,
+  Calculator,
+  Menu,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import jsPDF from 'jspdf';
@@ -170,8 +172,8 @@ interface StudentDashboardProps {
   setTestAnswers: (answers: Record<string, string>) => void;
   testResult: any | null;
   setTestResult: (result: any | null) => void;
-  cuetStatus: 'upload' | 'instructions' | 'exam' | 'terminated' | 'finished';
-  setCuetStatus: (status: 'upload' | 'instructions' | 'exam' | 'terminated' | 'finished') => void;
+  cuetStatus: 'upload' | 'instructions' | 'exam' | 'terminated' | 'finished' | 'nest-login' | 'nest-instructions' | 'nest-other-instructions';
+  setCuetStatus: (status: 'upload' | 'instructions' | 'exam' | 'terminated' | 'finished' | 'nest-login' | 'nest-instructions' | 'nest-other-instructions') => void;
   cuetQuestions: any[];
   setCuetQuestions: (qs: any[]) => void;
   cuetAnswers: Record<number, string>;
@@ -244,8 +246,8 @@ interface DashboardViewProps {
   testResult: any | null;
   setTestResult: (result: any | null) => void;
   handlePromoteAllStudents: () => Promise<void>;
-  cuetStatus: 'upload' | 'instructions' | 'exam' | 'terminated' | 'finished';
-  setCuetStatus: (status: 'upload' | 'instructions' | 'exam' | 'terminated' | 'finished') => void;
+  cuetStatus: 'upload' | 'instructions' | 'exam' | 'terminated' | 'finished' | 'nest-login' | 'nest-instructions' | 'nest-other-instructions';
+  setCuetStatus: (status: 'upload' | 'instructions' | 'exam' | 'terminated' | 'finished' | 'nest-login' | 'nest-instructions' | 'nest-other-instructions') => void;
   cuetQuestions: any[];
   setCuetQuestions: (qs: any[]) => void;
   cuetAnswers: Record<number, string>;
@@ -1323,7 +1325,7 @@ const TeacherDashboard = ({
 const AppContent: React.FC = () => {
   // Exam Hub state
   const [examType, setExamType] = useState<'cuet' | 'neet' | 'jee' | 'nest' | null>(null);
-  const [cuetStatus, setCuetStatus] = useState<'selection' | 'upload' | 'instructions' | 'exam' | 'terminated' | 'finished'>('selection');
+  const [cuetStatus, setCuetStatus] = useState<'selection' | 'upload' | 'instructions' | 'exam' | 'terminated' | 'finished' | 'nest-login' | 'nest-instructions' | 'nest-other-instructions'>('selection');
   const [cuetQuestions, setCuetQuestions] = useState<any[]>([]);
   const [neetData, setNeetData] = useState<Record<string, any[]>>({ 'Physics': [], 'Chemistry': [], 'Biology': [] });
   const [nestData, setNestData] = useState<Record<string, any[]>>({ 'Biology': [], 'Chemistry': [], 'Physics': [] });
@@ -1420,7 +1422,7 @@ const AppContent: React.FC = () => {
     // Dynamic timer: 1 hour per section, max 3 hours (10800 seconds)
     const duration = filledSectionsCount * 3600;
     setCuetTimeLeft(duration);
-    setCuetStatus('instructions');
+    setCuetStatus('nest-login');
   };
 
   const handleNeetTextUpload = async (subject: string, pastedText: string) => {
@@ -1683,6 +1685,653 @@ const CUETExamView = ({
     'Biology': '', 'Chemistry': '', 'Physics': ''
   });
   const [omrError, setOmrError] = useState<string | null>(null);
+
+  // NEST specific states
+  const [nestCandidateName, setNestCandidateName] = useState('John Smith');
+  const [nestCandidatePhoto, setNestCandidatePhoto] = useState<string>('https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200');
+  const [nestDefaultLanguage, setNestDefaultLanguage] = useState<'English' | 'Hindi' | ''>('');
+  const [isDisclaimerChecked, setIsDisclaimerChecked] = useState(false);
+  const [nestTextZoom, setNestTextZoom] = useState(100);
+  const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
+  const [isInfoOpen, setIsInfoOpen] = useState(false);
+  const [isRightDrawerOpen, setIsRightDrawerOpen] = useState(false);
+  const [drawerActiveTab, setDrawerActiveTab] = useState<'profile' | 'more'>('profile');
+  const [moreTabSubModal, setMoreTabSubModal] = useState<'instructions' | 'useful-data' | 'group' | 'question' | null>(null);
+  const [calculatorTab, setCalculatorTab] = useState<'keypad' | 'help'>('keypad');
+  const [calcInput, setCalcInput] = useState('');
+  const [calcResult, setCalcResult] = useState('');
+  const [keyboardActive, setKeyboardActive] = useState(false);
+  const [activeInput, setActiveInput] = useState<'id' | 'password' | null>(null);
+  const [nestUserId, setNestUserId] = useState('');
+  const [nestPassword, setNestPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [isMenuCollapsed, setIsMenuCollapsed] = useState(false);
+  const [nestLangSelectModal, setNestLangSelectModal] = useState(false);
+  const [calcMemory, setCalcMemory] = useState<number>(0);
+  const [isDraggingOverPhoto, setIsDraggingOverPhoto] = useState(false);
+
+  // High Fidelity calculator.net State Variables
+  const [cValue, setCValue] = useState<number>(0);
+  const [cMemory, setCMemory] = useState<number>(0);
+  const [cLevel, setCLevel] = useState<number>(0);
+  const [cEntered, setCEntered] = useState<boolean>(true);
+  const [cDecimal, setCDecimal] = useState<number>(0);
+  const [cFixed, setCFixed] = useState<number>(0);
+  const [cExponent, setCExponent] = useState<boolean>(false);
+  const [cDigits, setCDigits] = useState<number>(0);
+  const [cHj, setCHj] = useState<number>(0);
+  const [cStack, setCStack] = useState<{ value: number; op: string; vg: number }[]>([]);
+  const [cDegree, setCDegree] = useState<string>('degree'); // 'degree' or 'radians'
+
+  const isDegrees = cDegree === 'degree';
+
+  const formatCalcValue = (val: number, enteredVal: boolean, fixedVal: number): string => {
+    let E = "" + val;
+    if (E.indexOf("N") >= 0 || (val === 2 * val && val === 1 + val)) {
+      return "Error ";
+    }
+    let G = E.indexOf("e");
+    if (G >= 0) {
+      let A = E.substring(G + 1, E.length);
+      if (G > 11) G = 11;
+      E = E.substring(0, G);
+      if (E.indexOf(".") < 0) {
+        E += ".";
+      } else {
+        let j = E.length - 1;
+        while (j >= 0 && E.charAt(j) === "0") {
+          --j;
+        }
+        E = E.substring(0, j + 1);
+      }
+      E += " " + A;
+    } else {
+      let J = false;
+      if (val < 0) {
+        val = -val;
+        J = true;
+      }
+      let C = Math.floor(val);
+      let K = val - C;
+      let D = 12 - ("" + C).length - 1;
+      if (!enteredVal && fixedVal > 0) {
+        D = fixedVal;
+      }
+      let FStr = " 1000000000000000000".substring(1, D + 2);
+      let F = (FStr === "" || FStr === " ") ? 1 : parseInt(FStr);
+      let B = Math.floor(K * F + 0.5);
+      C = Math.floor(Math.floor(val * F + 0.5) / F);
+      if (J) {
+        E = "-" + C;
+      } else {
+        E = "" + C;
+      }
+      let H = "00000000000000" + B;
+      H = H.substring(H.length - D, H.length);
+      G = H.length - 1;
+      if (enteredVal || fixedVal === 0) {
+        while (G >= 0 && H.charAt(G) === "0") {
+          --G;
+        }
+        H = H.substring(0, G + 1);
+      }
+      if (G >= 0) {
+        E += "." + H;
+      }
+    }
+    return E;
+  };
+
+  const getCalcFormattedDisplay = (): string => {
+    let A = formatCalcValue(cValue, cEntered, cFixed);
+    if (cExponent) {
+      if (cHj < 0) {
+        A += " " + cHj;
+      } else {
+        A += " +" + cHj;
+      }
+    }
+    if (A.indexOf(".") < 0 && A !== "Error ") {
+      if (cEntered || cDecimal > 0) {
+        A += ".";
+      } else {
+        A += " ";
+      }
+    }
+    return A;
+  };
+
+  const pushStack = (val: number, op: string, vg: number, currentLevel: number, currentStack: any[]) => {
+    if (currentLevel === 12) return null;
+    const nextStack = [{ value: val, op, vg }, ...currentStack];
+    return {
+      stack: nextStack,
+      level: currentLevel + 1
+    };
+  };
+
+  const runEvalx = (currentVal: number, currentLevel: number, currentStack: any[]) => {
+    if (currentLevel === 0) return { val: currentVal, lvl: currentLevel, stk: currentStack, keepGoing: false };
+    const top = currentStack[0];
+    const op = top.op;
+    const Qk = top.value;
+    let newVal = currentVal;
+    if (op === "+") {
+      newVal = parseFloat(Qk) + currentVal;
+    } else if (op === "-") {
+      newVal = Qk - currentVal;
+    } else if (op === "*") {
+      newVal = Qk * currentVal;
+    } else if (op === "/") {
+      newVal = Qk / currentVal;
+    } else if (op === "pow") {
+      newVal = Math.pow(Qk, currentVal);
+    } else if (op === "apow") {
+      newVal = Math.pow(Qk, 1 / currentVal);
+    }
+
+    const nextStack = currentStack.slice(1);
+    const nextLevel = currentLevel - 1;
+
+    if (op === "(") {
+      return { val: newVal, lvl: nextLevel, stk: nextStack, keepGoing: false };
+    }
+    return { val: newVal, lvl: nextLevel, stk: nextStack, keepGoing: true };
+  };
+
+  const runEnter = (currentVal: number, isExp: boolean, explVal: number) => {
+    let newVal = currentVal;
+    if (isExp) {
+      newVal = currentVal * Math.exp(explVal * Math.LN10);
+    }
+    return {
+      val: newVal,
+      entered: true,
+      exponent: false,
+      decimal: 0,
+      fixed: 0
+    };
+  };
+
+  const runNumInput = (
+    A: number,
+    currentVal: number,
+    digits: number,
+    entered: boolean,
+    isExponent: boolean,
+    valHj: number,
+    decimal: number,
+    fixed: number
+  ) => {
+    let newVal = currentVal;
+    let newDigits = digits;
+    let newEntered = entered;
+    let newHj = valHj;
+    let newDecimal = decimal;
+    let newFixed = fixed;
+
+    if (newEntered) {
+      newVal = 0;
+      newDigits = 0;
+      newEntered = false;
+    }
+
+    if (A === 0 && newDigits === 0) {
+      return { val: newVal, digits: newDigits, entered: newEntered, hj: newHj, decimal: newDecimal, fixed: newFixed };
+    }
+
+    if (isExponent) {
+      let appendA = A;
+      if (newHj < 0) appendA = -A;
+      if (newDigits < 3) {
+        newHj = newHj * 10 + appendA;
+        newDigits = newDigits + 1;
+      }
+      return { val: newVal, digits: newDigits, entered: newEntered, hj: newHj, decimal: newDecimal, fixed: newFixed };
+    }
+
+    if (newVal < 0) {
+      A = -A;
+    }
+
+    if (newDigits < 11) {
+      newDigits = newDigits + 1;
+      if (newDecimal > 0) {
+        newDecimal = newDecimal * 10;
+        newVal = newVal + (A / newDecimal);
+        newFixed = newFixed + 1;
+      } else {
+        newVal = newVal * 10 + A;
+      }
+    }
+
+    return { val: newVal, digits: newDigits, entered: newEntered, hj: newHj, decimal: newDecimal, fixed: newFixed };
+  };
+
+  const runOpt = (
+    A: string,
+    currentVal: number,
+    currentLevel: number,
+    currentStack: any[],
+    isExp: boolean,
+    valHj: number
+  ) => {
+    const ent = runEnter(currentVal, isExp, valHj);
+    let newVal = ent.val;
+
+    let vg = 1;
+    if (A === "+" || A === "-") vg = 1;
+    else if (A === "*" || A === "/") vg = 2;
+    else if (A === "pow" || A === "apow") vg = 3;
+
+    let nextLvl = currentLevel;
+    let nextStk = [...currentStack];
+
+    if (nextLvl > 0 && vg <= nextStk[0].vg) {
+      const ev = runEvalx(newVal, nextLvl, nextStk);
+      newVal = ev.val;
+      nextLvl = ev.lvl;
+      nextStk = ev.stk;
+    }
+
+    const p = pushStack(newVal, A, vg, nextLvl, nextStk);
+    if (!p) {
+      return {
+        val: NaN,
+        lvl: nextLvl,
+        stk: nextStk,
+        entered: true,
+        exponent: false,
+        decimal: 0,
+        fixed: 0
+      };
+    }
+
+    return {
+      val: newVal,
+      lvl: p.level,
+      stk: p.stack,
+      entered: true,
+      exponent: false,
+      decimal: 0,
+      fixed: 0
+    };
+  };
+
+  const runPopen = (
+    currentVal: number,
+    currentLevel: number,
+    currentStack: any[],
+    isExp: boolean,
+    valHj: number
+  ) => {
+    const ent = runEnter(currentVal, isExp, valHj);
+    const p = pushStack(0, "(", 0, currentLevel, currentStack);
+    if (!p) {
+      return {
+        val: NaN,
+        lvl: currentLevel,
+        stk: currentStack,
+        entered: ent.entered,
+        exponent: ent.exponent,
+        decimal: ent.decimal,
+        fixed: ent.fixed
+      };
+    }
+    return {
+      val: ent.val,
+      lvl: p.level,
+      stk: p.stack,
+      entered: ent.entered,
+      exponent: ent.exponent,
+      decimal: ent.decimal,
+      fixed: ent.fixed
+    };
+  };
+
+  const runPclose = (
+    currentVal: number,
+    currentLevel: number,
+    currentStack: any[],
+    isExp: boolean,
+    valHj: number
+  ) => {
+    const ent = runEnter(currentVal, isExp, valHj);
+    let newVal = ent.val;
+    let nextLvl = currentLevel;
+    let nextStk = [...currentStack];
+
+    let keepGoing = true;
+    while (keepGoing && nextLvl > 0) {
+      const ev = runEvalx(newVal, nextLvl, nextStk);
+      newVal = ev.val;
+      nextLvl = ev.lvl;
+      nextStk = ev.stk;
+      keepGoing = ev.keepGoing;
+    }
+
+    return {
+      val: newVal,
+      lvl: nextLvl,
+      stk: nextStk,
+      entered: ent.entered,
+      exponent: ent.exponent,
+      decimal: ent.decimal,
+      fixed: ent.fixed
+    };
+  };
+
+  const runFunc = (
+    D: string,
+    currentVal: number,
+    isExp: boolean,
+    valHj: number,
+    memory: number,
+    degreeMode: string
+  ) => {
+    const ent = runEnter(currentVal, isExp, valHj);
+    let newVal = ent.val;
+    let nextMemory = memory;
+
+    if (D === "1/x") {
+      newVal = 1 / newVal;
+    } else if (D === "pc") {
+      newVal = newVal / 100;
+    } else if (D === "qc") {
+      newVal = newVal / 1000;
+    } else if (D === "n!") {
+      if (newVal < 0 || newVal > 200 || newVal !== Math.round(newVal)) {
+        newVal = NaN;
+      } else {
+        let E = 1;
+        for (let A = 1; A <= newVal; ++A) {
+          E *= A;
+        }
+        newVal = E;
+      }
+    } else if (D === "MR") {
+      newVal = memory;
+    } else if (D === "M+") {
+      nextMemory = memory + newVal;
+    } else if (D === "MS") {
+      nextMemory = newVal;
+    } else if (D === "MC") {
+      nextMemory = 0;
+    } else if (D === "M-") {
+      nextMemory = memory - newVal;
+    } else if (D === "asin") {
+      if (degreeMode === "degree") {
+        newVal = (Math.asin(newVal) * 180) / Math.PI;
+      } else {
+        newVal = Math.asin(newVal);
+      }
+    } else if (D === "acos") {
+      if (degreeMode === "degree") {
+        newVal = (Math.acos(newVal) * 180) / Math.PI;
+      } else {
+        newVal = Math.acos(newVal);
+      }
+    } else if (D === "atan") {
+      if (degreeMode === "degree") {
+        newVal = (Math.atan(newVal) * 180) / Math.PI;
+      } else {
+        newVal = Math.atan(newVal);
+      }
+    } else if (D === "e^x" || D === "ex") {
+      newVal = Math.pow(Math.E, newVal);
+    } else if (D === "2^x") {
+      newVal = Math.exp(newVal * Math.LN2);
+    } else if (D === "10x") {
+      newVal = Math.pow(10, newVal);
+    } else if (D === "x^2" || D === "x2") {
+      newVal = newVal * newVal;
+    } else if (D === "x3" || D === "x^3" || D === "x3") {
+      newVal = newVal * newVal * newVal;
+    } else if (D === "3x") {
+      newVal = Math.pow(newVal, 1 / 3);
+    } else if (D === "e") {
+      newVal = Math.E;
+    } else if (D === "pi") {
+      newVal = Math.PI;
+    } else if (D === "RND") {
+      newVal = Math.random();
+    } else if (D === "sin") {
+      if (degreeMode === "degree") {
+        newVal = Math.sin((newVal / 180) * Math.PI);
+      } else {
+        newVal = Math.sin(newVal);
+      }
+    } else if (D === "cos") {
+      if (degreeMode === "degree") {
+        let C = newVal % 360;
+        if (C < 0) C = C + 360;
+        if (C === 90 || C === 270) {
+          newVal = 0;
+        } else {
+          newVal = Math.cos((newVal / 180) * Math.PI);
+        }
+      } else {
+        let C = ((newVal * 180) / Math.PI) % 360;
+        if (C < 0) C = C + 360;
+        if (Math.abs(C - 90) < 1e-10 || Math.abs(C - 270) < 1e-10) {
+          newVal = 0;
+        } else {
+          newVal = Math.cos(newVal);
+        }
+      }
+    } else if (D === "tan") {
+      if (degreeMode === "degree") {
+        newVal = Math.tan((newVal / 180) * Math.PI);
+      } else {
+        newVal = Math.tan(newVal);
+      }
+    } else if (D === "log") {
+      newVal = Math.log(newVal) / Math.LN10;
+    } else if (D === "log2") {
+      newVal = Math.log(newVal) / Math.LN2;
+    } else if (D === "ln") {
+      newVal = Math.log(newVal);
+    } else if (D === "sqrt") {
+      newVal = Math.sqrt(newVal);
+    }
+
+    return {
+      val: newVal,
+      memory: nextMemory,
+      entered: ent.entered,
+      exponent: ent.exponent,
+      decimal: ent.decimal,
+      fixed: ent.fixed
+    };
+  };
+
+  const handleKeyboardKeyPress = (key: string) => {
+    setLoginError('');
+    if (activeInput === null) return;
+    const isId = activeInput === 'id';
+    const currentVal = isId ? nestUserId : nestPassword;
+    const setVal = isId ? setNestUserId : setNestPassword;
+
+    if (key === 'Backspace') {
+      setVal(currentVal.slice(0, -1));
+    } else if (key === 'Clear') {
+      setVal('');
+    } else if (key === 'Space') {
+      setVal(currentVal + ' ');
+    } else if (key === 'Tab' || key === 'Enter' || key === 'Close' || key === 'Caps' || key === 'Shift') {
+      if (key === 'Close' || key === 'Enter') {
+        setKeyboardActive(false);
+        setActiveInput(null);
+      }
+    } else {
+      setVal(currentVal + key);
+    }
+  };
+
+  const handleCalcKeyPress = (key: string) => {
+    if (key === "sin" || key === "cos" || key === "tan" || key === "asin" || key === "acos" || key === "atan" || key === "e" || key === "pi" || key === "n!" || key === "x2" || key === "1/x" || key === "swap" || key === "x3" || key === "3x" || key === "RND" || key === "M-" || key === "qc" || key === "MC" || key === "MR" || key === "MS" || key === "M+" || key === "sqrt" || key === "pc" || key === "ex" || key === "10x") {
+      if (key === "swap" && cLevel > 0 && cStack.length > 0) {
+        const ent = runEnter(cValue, cExponent, cHj);
+        let activeVal = ent.val;
+        let topVal = cStack[0].value;
+        const nextStack = [...cStack];
+        nextStack[0] = { ...nextStack[0], value: activeVal };
+        setCValue(topVal);
+        setCStack(nextStack);
+        setCEntered(ent.entered);
+        setCExponent(ent.exponent);
+        setCDecimal(ent.decimal);
+        setCFixed(ent.fixed);
+        return;
+      }
+      
+      const res = runFunc(key, cValue, cExponent, cHj, cMemory, cDegree);
+      setCValue(res.val);
+      setCMemory(res.memory);
+      setCEntered(res.entered);
+      setCExponent(res.exponent);
+      setCDecimal(res.decimal);
+      setCFixed(res.fixed);
+    } else if (typeof key === "number" || /^[0-9]$/.test(key)) {
+      const num = parseInt(key);
+      const res = runNumInput(num, cValue, cDigits, cEntered, cExponent, cHj, cDecimal, cFixed);
+      setCValue(res.val);
+      setCDigits(res.digits);
+      setCEntered(res.entered);
+      setCHj(res.hj);
+      setCDecimal(res.decimal);
+      setCFixed(res.fixed);
+    } else if (key === "pow" || key === "apow" || key === "+" || key === "-" || key === "*" || key === "/") {
+      const res = runOpt(key, cValue, cLevel, cStack, cExponent, cHj);
+      setCValue(res.val);
+      setCLevel(res.lvl);
+      setCStack(res.stk);
+      setCEntered(res.entered);
+      setCExponent(res.exponent);
+      setCDecimal(res.decimal);
+      setCFixed(res.fixed);
+    } else if (key === "(") {
+      const res = runPopen(cValue, cLevel, cStack, cExponent, cHj);
+      setCValue(res.val);
+      setCLevel(res.lvl);
+      setCStack(res.stk);
+      setCEntered(res.entered);
+      setCExponent(res.exponent);
+      setCDecimal(res.decimal);
+      setCFixed(res.fixed);
+    } else if (key === ")") {
+      const res = runPclose(cValue, cLevel, cStack, cExponent, cHj);
+      setCValue(res.val);
+      setCLevel(res.lvl);
+      setCStack(res.stk);
+      setCEntered(res.entered);
+      setCExponent(res.exponent);
+      setCDecimal(res.decimal);
+      setCFixed(res.fixed);
+    } else if (key === "EXP") {
+      if (cEntered || cExponent) return;
+      setCExponent(true);
+      setCHj(0);
+      setCDigits(0);
+      setCDecimal(0);
+    } else if (key === ".") {
+      let nextEntered = cEntered;
+      let nextValue = cValue;
+      let nextDigits = cDigits;
+      let nextDecimal = cDecimal;
+
+      if (nextEntered) {
+        nextValue = 0;
+        nextDigits = 1;
+        nextEntered = false;
+      }
+      if (nextDecimal === 0 && nextValue === 0 && nextDigits === 0) {
+        nextDigits = 1;
+      }
+      if (nextDecimal === 0) {
+        nextDecimal = 1;
+      }
+
+      setCEntered(nextEntered);
+      setCValue(nextValue);
+      setCDigits(nextDigits);
+      setCDecimal(nextDecimal);
+    } else if (key === "+/-") {
+      if (cExponent) {
+        setCHj(-cHj);
+      } else {
+        setCValue(-cValue);
+      }
+    } else if (key === "C" || key === "Backspace") {
+      if (key === "Backspace") {
+        if (!cEntered) {
+          const s = String(cValue);
+          if (s.length > 1) {
+            const next = parseFloat(s.slice(0, -1));
+            setCValue(isNaN(next) ? 0 : next);
+          } else {
+            setCValue(0);
+          }
+        }
+      } else {
+        setCLevel(0);
+        setCExponent(false);
+        setCValue(0);
+        setCStack([]);
+        setCEntered(true);
+        setCDecimal(0);
+        setCFixed(0);
+      }
+    } else if (key === "=") {
+      const ent = runEnter(cValue, cExponent, cHj);
+      let newVal = ent.val;
+      let nextLvl = cLevel;
+      let nextStk = [...cStack];
+
+      while (nextLvl > 0) {
+        const ev = runEvalx(newVal, nextLvl, nextStk);
+        newVal = ev.val;
+        nextLvl = ev.lvl;
+        nextStk = ev.stk;
+      }
+
+      setCValue(newVal);
+      setCLevel(nextLvl);
+      setCStack(nextStk);
+      setCEntered(ent.entered);
+      setCExponent(ent.exponent);
+      setCDecimal(ent.decimal);
+      setCFixed(ent.fixed);
+    }
+  };
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          setNestCandidatePhoto(event.target.result as string);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handlePhotoDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingOverPhoto(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          setNestCandidatePhoto(event.target.result as string);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   // Proctoring logic
   useEffect(() => {
@@ -2214,6 +2863,417 @@ const CUETExamView = ({
     );
   }
 
+  if (cuetStatus === 'nest-login') {
+    return (
+      <div className="min-h-screen bg-[#f7f7f7] font-sans flex flex-col select-none text-slate-800">
+        {/* Sticky Admin/Developer Setup Panel */}
+        <div className="sticky top-0 bg-indigo-50 border-b border-indigo-200 z-[999] px-4 py-3 shadow-sm">
+          <div className="max-w-4xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3 font-sans">
+            <div className="flex items-center gap-2">
+              <span className="bg-indigo-600 text-white font-black text-[10px] px-2 py-1 rounded">DEV PANEL</span>
+              <p className="text-xs font-bold text-indigo-900">Custom Profile Injection Center (TCS iON Sync)</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-4 w-full md:w-auto justify-end">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-600 shrink-0">Candidate Name:</span>
+                <input 
+                  type="text" 
+                  value={nestCandidateName} 
+                  onChange={(e) => setNestCandidateName(e.target.value)} 
+                  placeholder="Enter name (e.g. John Smith)" 
+                  className="bg-white border text-xs px-2.5 py-1.5 rounded font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 w-44"
+                />
+              </div>
+              <div 
+                className={`flex items-center gap-2 border-2 border-dashed rounded px-3 py-1 bg-white cursor-pointer transition-colors ${isDraggingOverPhoto ? 'border-indigo-500 bg-indigo-50/50' : 'border-slate-300'}`}
+                onDragOver={(e) => { e.preventDefault(); setIsDraggingOverPhoto(true); }}
+                onDragLeave={() => setIsDraggingOverPhoto(false)}
+                onDrop={handlePhotoDrop}
+                onClick={() => document.getElementById('nest-photo-upload-input')?.click()}
+              >
+                <Smartphone className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                <span className="text-[10px] font-bold text-slate-500">Drag/Click Profile Photo</span>
+                <input 
+                  id="nest-photo-upload-input" 
+                  type="file" 
+                  accept="image/*" 
+                  onChange={handlePhotoUpload} 
+                  className="hidden" 
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Screen 1 Top Bar (Header) */}
+        <header className="h-[60px] bg-[#111111] text-white flex justify-between items-center px-4 sm:px-6 shrink-0 relative z-50">
+          <div className="flex flex-col justify-center">
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">System Name :</span>
+            <span className="text-lg font-black text-[#ffcc00] uppercase tracking-tight leading-none text-left">C001</span>
+          </div>
+          <div className="flex items-center gap-4 text-right">
+            <div>
+              <p className="text-[10px] text-slate-400 font-bold uppercase m-0 leading-none">Candidate Name</p>
+              <h4 className="text-sm font-black text-[#ffcc00] tracking-tight uppercase leading-none mt-1">{nestCandidateName}</h4>
+              <p className="text-[10px] text-[#e38d13] font-bold uppercase mt-1 leading-none">Mock Exam</p>
+            </div>
+            <div className="w-10 h-10 border border-slate-700 bg-slate-900 rounded-sm overflow-hidden flex items-center justify-center shrink-0">
+              {nestCandidatePhoto ? (
+                <img src={nestCandidatePhoto} className="w-full h-full object-cover" alt="Profile" referrerPolicy="no-referrer" />
+              ) : (
+                <User className="w-6 h-6 text-slate-400" />
+              )}
+            </div>
+          </div>
+        </header>
+
+        {/* Sub-Header Banner with scrolling instruction text */}
+        <div className="h-7 bg-[#ffff00] border-y border-[#e6e600] flex items-center overflow-hidden shrink-0">
+          <div className="whitespace-nowrap text-[11px] font-bold text-black px-4 select-none">
+            Kindly contact the invigilator if there are any discrepancies in the Name and Photograph displayed on the screen or if the photograph is not yours.
+          </div>
+        </div>
+
+        {/* Centered Login Box and Body Area */}
+        <div className="flex-1 flex flex-col items-center justify-center p-4 relative">
+          <div className="w-full max-w-[420px] bg-white rounded-md shadow-lg border border-slate-200 overflow-hidden">
+            {/* Header of Login Form */}
+            <div className="bg-[#f1f1f1] px-5 py-3 border-b flex items-center gap-3">
+              <div className="w-6 h-6 rounded-full bg-slate-300 flex items-center justify-center">
+                <User className="w-3.5 h-3.5 text-slate-600" />
+              </div>
+              <span className="text-sm font-black text-slate-700 uppercase tracking-tight">Login</span>
+            </div>
+
+            {/* Login fields and Form body */}
+            <div className="p-6 space-y-4">
+              {loginError && (
+                <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded font-bold leading-normal">
+                  {loginError}
+                </div>
+              )}
+
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                  <User className="w-4 h-4" />
+                </div>
+                <input 
+                  type="text" 
+                  value={nestUserId}
+                  onFocus={() => { setActiveInput('id'); setKeyboardActive(true); }}
+                  onChange={(e) => { setNestUserId(e.target.value); setLoginError(''); }}
+                  placeholder="Roll No. or Login ID" 
+                  className="w-full bg-white border border-slate-300 rounded pl-10 pr-4 py-2.5 text-sm font-bold text-slate-800 outline-none focus:ring-1 focus:ring-[#46b8da] focus:border-[#46b8da] transition-all"
+                />
+              </div>
+
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <input 
+                  type="password" 
+                  value={nestPassword}
+                  onFocus={() => { setActiveInput('password'); setKeyboardActive(true); }}
+                  onChange={(e) => { setNestPassword(e.target.value); setLoginError(''); }}
+                  placeholder="Password" 
+                  className="w-full bg-white border border-slate-300 rounded pl-10 pr-4 py-2.5 text-sm font-bold text-slate-800 outline-none focus:ring-1 focus:ring-[#46b8da] focus:border-[#46b8da] transition-all"
+                />
+              </div>
+
+              <button 
+                onClick={() => {
+                  if (nestPassword !== 'P@llavi76') {
+                    setLoginError("Invalid password. Please use correct password: P@llavi76");
+                    return;
+                  }
+                  setLoginError('');
+                  setCuetStatus('nest-instructions');
+                  setKeyboardActive(false);
+                  setActiveInput(null);
+                }}
+                className="w-full bg-[#46b8da] hover:bg-[#31b0d5] text-white font-black py-2.5 rounded text-xs uppercase tracking-wider transition-all"
+              >
+                Sign In
+              </button>
+            </div>
+          </div>
+
+          {/* Absolute positioned Virtual US physical keyboard */}
+          {keyboardActive && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-full max-w-[640px] bg-[#222] p-3 rounded-lg shadow-2xl border border-slate-700 z-[999] transition-all font-sans">
+              <div className="flex justify-between items-center mb-2 px-1">
+                <span className="text-[10px] font-black text-[#ffcc00] uppercase tracking-wider">TCS Virtual Keyboard (US International)</span>
+                <button 
+                  onClick={() => { setKeyboardActive(false); setActiveInput(null); }}
+                  className="text-slate-400 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="grid gap-1">
+                {/* Keyboard keys rendering */}
+                {[
+                  ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'Backspace'],
+                  ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
+                  ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
+                  ['z', 'x', 'c', 'v', 'b', 'n', 'm', 'Space'],
+                  ['Clear', 'Close']
+                ].map((row, rIdx) => (
+                  <div key={rIdx} className="flex justify-center gap-1">
+                    {row.map(key => {
+                      let keyStyle = "bg-[#fff]/10 hover:bg-[#fff]/20 text-white text-xs font-bold py-2 px-2.5 rounded min-w-[32px] sm:min-w-[40px] text-center capitalize transition-all select-none cursor-pointer active:scale-95";
+                      if (key === 'Backspace') keyStyle = "bg-red-900/60 hover:bg-red-900 text-white text-xs font-bold py-2 px-3 rounded shrink-0";
+                      else if (key === 'Clear') keyStyle = "bg-orange-800/60 hover:bg-orange-800 text-white text-xs font-bold py-2 px-3 rounded shrink-0";
+                      else if (key === 'Close') keyStyle = "bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold py-2 px-3 rounded shrink-0";
+                      else if (key === 'Space') keyStyle = "bg-blue-600/60 hover:bg-blue-600 text-white text-xs font-bold py-2 rounded flex-1 max-w-[200px]";
+
+                      return (
+                        <div 
+                          key={key} 
+                          onClick={() => handleKeyboardKeyPress(key)}
+                          className={keyStyle}
+                        >
+                          {key}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (cuetStatus === 'nest-instructions') {
+    return (
+      <div className="min-h-screen bg-white font-sans flex flex-col text-slate-800 select-none">
+        {/* Screen 2 Header banner */}
+        <header className="bg-gradient-to-r from-blue-700 via-[#2f71b9] to-blue-800 text-white h-[60px] flex items-center px-4 shrink-0 shadow-md">
+          <div className="flex items-center gap-3 w-full justify-center relative">
+            <div className="absolute left-4 bg-white/20 p-1.5 rounded-full">
+              <Monitor className="w-5 h-5 text-white" />
+            </div>
+            <h1 className="text-sm sm:text-base font-black uppercase tracking-tight text-center">
+              NATIONAL ENTRANCE SCREENING TEST / NEST 2026
+            </h1>
+          </div>
+        </header>
+
+        {/* Sub Header bar */}
+        <div className="bg-[#2f71b9] text-white px-4 py-2 border-t border-blue-400/30 flex justify-between items-center shrink-0">
+          <span className="text-xs font-black uppercase tracking-wider">Instructions</span>
+          <div className="flex items-center gap-2 text-slate-800">
+            <span className="text-[10px] font-bold text-white">View In:</span>
+            <select className="bg-white border text-xs px-2 py-1 rounded outline-none font-bold">
+              <option>English</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Instruction main scrollable box */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-4xl mx-auto w-full space-y-6">
+          <h2 className="text-sm font-black text-slate-900 border-b pb-2 uppercase tracking-tight">
+            Please read the instructions carefully
+          </h2>
+
+          <div className="text-xs text-slate-700 space-y-4 leading-relaxed font-bold">
+            <p className="font-extrabold text-slate-900 text-sm">General Instructions:</p>
+            <ol className="list-decimal pl-4 space-y-3">
+              <li>Total duration of examination is 12 minutes.</li>
+              <li>The clock will be set at the server. The countdown timer in the top right corner of screen will display the remaining time available for you to complete the examination. When the timer reaches zero, the examination will end by itself. You will not be required to end or submit your examination.</li>
+              <li>
+                <p>The Question Palette displayed on the right side of screen will show the status of each question using one of the following symbols:</p>
+                <div className="grid grid-cols-1 gap-2 mt-2 pl-2">
+                  <div className="flex items-center gap-3">
+                    <span className="w-5 h-5 bg-white border border-slate-300 text-[10px] flex items-center justify-center font-black rounded shrink-0 text-slate-900">1</span>
+                    <span>You have not visited the question yet.</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="w-5 h-5 bg-[#d9534f] text-white text-[10px] flex items-center justify-center font-black rounded-t-3xl rounded-b-lg border-b-2 border-red-700 shrink-0">2</span>
+                    <span>You have not answered the question.</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="w-5 h-5 bg-[#5cb85c] text-white text-[10px] flex items-center justify-center font-black rounded-b-3xl rounded-t-lg border-t-2 border-green-800 shrink-0">3</span>
+                    <span>You have answered the question.</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="w-5 h-5 bg-[#7a43b6] text-white text-[10px] flex items-center justify-center font-black rounded-full shrink-0">4</span>
+                    <span>You have NOT answered the question, but have marked the question for review.</span>
+                  </div>
+                  <div className="flex items-center gap-3 font-bold">
+                    <span className="w-5 h-5 bg-[#7a43b6] text-white text-[10px] flex items-center justify-center font-black rounded-full relative after:content-[''] after:absolute after:bottom-0 after:right-0 after:w-2 after:h-2 after:bg-[#5cb85c] after:rounded-full after:border after:border-white shrink-0">5</span>
+                    <span>The question(s) "Answered and Marked for Review" will be considered for evaluation. The Marked for Review status for a question simply indicates that you would like to look at that question again.</span>
+                  </div>
+                </div>
+              </li>
+              <li>You can click on the "&gt;" arrow which appears to the left of question palette to collapse the question palette thereby maximizing the question window. To view the question palette again, you can click on "&lt;" which appears on the right side of question window.</li>
+              <li>You can click on your "Profile" image on top right corner of your screen to change the language during the exam for entire question paper. On clicking of Profile image you will get a drop-down to change the question content to the desired language.</li>
+              <li>You can click on [Up Arrow] to navigate to the bottom and [Down Arrow] to navigate to the top of the question area, without scrolling.</li>
+            </ol>
+
+            <p className="font-extrabold text-slate-900 text-sm mt-4">Navigating to a Question:</p>
+            <ol start={7} className="list-decimal pl-4 space-y-3">
+              <li>
+                <p>To answer a question, do the following:</p>
+                <ol className="list-alpha pl-4 space-y-1.5 mt-1.5">
+                  <li>Click on the question number in the Question Palette at the right of your screen to go to that numbered question directly. Note that using this option does NOT save your answer to the current question.</li>
+                  <li>Click on <span className="font-extrabold uppercase text-slate-900	">Save & Next</span> to save your answer for the current question and then go to the next question.</li>
+                  <li>Click on <span className="font-extrabold uppercase text-slate-900">Mark for Review & Next</span> to save your answer for the current question, mark it for review, and then go to the next question.</li>
+                </ol>
+              </li>
+            </ol>
+
+            <p className="font-extrabold text-slate-900 text-sm mt-4">Answering a Question:</p>
+            <ol start={8} className="list-decimal pl-4 space-y-2">
+              <li>
+                <p>Procedure for answering a multiple choice type question:</p>
+                <ol className="list-alpha pl-4 space-y-1.5 mt-1.5">
+                  <li>To select your answer, click on the button of one of the options.</li>
+                  <li>To deselect your chosen answer, click on the button of the chosen option again or click on the <span className="font-extrabold uppercase text-slate-900">Clear Response</span> button.</li>
+                  <li>To change your chosen answer, click on the button of another option.</li>
+                  <li>To save your answer, you MUST click on the <span className="font-extrabold uppercase text-slate-900">Save & Next</span> button.</li>
+                  <li>To mark the question for review, click on the <span className="font-extrabold uppercase text-slate-900">Mark for Review & Next</span> button.</li>
+                </ol>
+              </li>
+              <li>To change your answer to a question that has already been answered, first select that question for answering and then follow the procedure for answering that type of question.</li>
+            </ol>
+
+            <p className="font-extrabold text-slate-900 text-sm mt-4">Navigating through sections:</p>
+            <ol start={10} className="list-decimal pl-4 space-y-3">
+              <li>Sections in this question paper are displayed on the top bar of the screen. Questions in a section can be viewed by clicking on the section name. The section you are currently viewing is highlighted.</li>
+              <li>After clicking the Save & Next button on the last question for a section, you will automatically be taken to the first question of the next section.</li>
+              <li>Candidate can view the corresponding section summary as per the table depicted that appears in every section above the question palette.</li>
+              <li>Candidate can view the corresponding section summary as part of the legend that appears in every section above the question palette.</li>
+            </ol>
+          </div>
+        </div>
+
+        {/* Footer fixed navbar */}
+        <footer className="h-14 bg-slate-100 border-t flex items-center justify-end px-6 shrink-0 gap-3 z-50">
+          <button 
+            onClick={() => setCuetStatus('nest-other-instructions')} 
+            className="bg-[#2f71b9] hover:bg-blue-700 text-white font-black text-xs uppercase px-5 py-2.5 rounded tracking-wider shadow-md transition-all active:scale-[0.98]"
+          >
+            Next &gt;
+          </button>
+        </footer>
+      </div>
+    );
+  }
+
+  if (cuetStatus === 'nest-other-instructions') {
+    return (
+      <div className="min-h-screen bg-white font-sans flex flex-col text-slate-800 select-none">
+        {/* Screen 2 Header banner */}
+        <header className="bg-gradient-to-r from-blue-700 via-[#2f71b9] to-blue-800 text-white h-[60px] flex items-center px-4 shrink-0 shadow-md">
+          <div className="flex items-center gap-3 w-full justify-center relative">
+            <div className="absolute left-4 bg-white/20 p-1.5 rounded-full">
+              <Monitor className="w-5 h-5 text-white" />
+            </div>
+            <h1 className="text-sm sm:text-base font-black uppercase tracking-tight text-center">
+              NATIONAL ENTRANCE SCREENING TEST / NEST 2026
+            </h1>
+          </div>
+        </header>
+
+        {/* Sub Header bar */}
+        <div className="bg-[#2f71b9] text-white px-4 py-2 border-t border-blue-400/30 flex justify-between items-center shrink-0">
+          <span className="text-xs font-black uppercase tracking-wider">Other Important Instructions</span>
+          <div className="flex items-center gap-2 text-slate-800">
+            <span className="text-[10px] font-bold text-white">View In:</span>
+            <select className="bg-white border text-xs px-2 py-1 rounded outline-none font-bold">
+              <option>English</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Other Instructions area */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-4xl mx-auto w-full space-y-6">
+          <div className="p-10 border border-slate-200 bg-slate-50 rounded-xl space-y-6 text-center">
+            <p className="text-sm font-black text-slate-700 uppercase tracking-tight leading-relaxed">
+              The instructions are not available in the chosen language.
+            </p>
+          </div>
+
+          <div className="border border-slate-200 p-5 rounded-xl space-y-5 bg-white relative">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
+              <label className="text-xs font-black text-slate-800 uppercase tracking-wide">
+                Choose your Default Language:
+              </label>
+              <div className="relative text-slate-850">
+                <button 
+                  onClick={() => setNestLangSelectModal(!nestLangSelectModal)} 
+                  className="w-full bg-slate-100 hover:bg-slate-200 border text-slate-800 text-xs px-4 py-2 rounded font-black tracking-wider text-left flex justify-between items-center gap-3 min-w-[150px]"
+                >
+                  <span>{nestDefaultLanguage || '--Select--'}</span>
+                  <span className="text-[10px]">▼</span>
+                </button>
+                {nestLangSelectModal && (
+                  <div className="absolute z-50 mt-1 left-0 right-0 bg-white border rounded shadow-xl overflow-hidden py-1">
+                    {['English', 'Hindi'].map(lang => (
+                      <div 
+                        key={lang} 
+                        onClick={() => { setNestDefaultLanguage(lang as any); setNestLangSelectModal(false); }} 
+                        className="px-4 py-2 hover:bg-indigo-50 text-xs font-bold text-slate-700 cursor-pointer text-left"
+                      >
+                        {lang}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-3 items-start select-text leading-relaxed">
+              <input 
+                id="disclaimer-chk" 
+                type="checkbox" 
+                checked={isDisclaimerChecked} 
+                onChange={(e) => setIsDisclaimerChecked(e.target.checked)} 
+                className="w-4 h-4 mt-1 rounded text-[#2f71b9] outline-none border-slate-300 pointer-events-auto shrink-0 cursor-pointer"
+              />
+              <label htmlFor="disclaimer-chk" className="text-[10px] text-slate-600 font-bold select-none cursor-pointer text-left">
+                Please read all inputs carefully in your default language. This language can be changed for a particular question later on. I have read and understood the instructions. All computer hardwares assigned to me are in proper working condition. I declare that I am not in possession of any prohibited material such as mobile phones, bluetooth devices etc. I am fully aware that if found with any such items inside the Examination Hall, I agree that it is a case of violating regulations / I shall be liable to be debarred from the Test and or to disciplinary action, which may include bar from future Tests / Examinations.
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer actions bar */}
+        <footer className="h-14 bg-slate-100 border-t flex items-center justify-between px-6 shrink-0 z-50">
+          <button 
+            onClick={() => setCuetStatus('nest-instructions')} 
+            className="border border-[#2f71b9] hover:bg-slate-200 font-black text-xs uppercase px-5 py-2.5 rounded tracking-wider text-[#2f71b9]"
+          >
+            &lt; Previous
+          </button>
+          
+          <button 
+            onClick={() => {
+              if (!nestDefaultLanguage) { alert("Please select your Default Language first."); return; }
+              if (!isDisclaimerChecked) { alert("Please inspect and check the disclaimer to declare that you agree to the instructions."); return; }
+              setCuetStatus('exam');
+              setCuetAnswers({});
+              const initialMap: any = {};
+              cuetQuestions.forEach((_: any, i: number) => initialMap[i] = 'not-visited');
+              initialMap[0] = 'not-answered';
+              setCuetStatusMap(initialMap);
+              setActiveQuestion(0);
+            }} 
+            className="bg-[#5cb85c] hover:bg-green-700 text-white font-black text-xs uppercase px-5 py-2.5 rounded tracking-wider shadow-md transition-all active:scale-[0.98]"
+          >
+            I am ready to begin
+          </button>
+        </footer>
+      </div>
+    );
+  }
+
   if (cuetStatus === 'instructions') {
     return (
       <div className="max-w-2xl mx-auto py-20 px-4">
@@ -2290,6 +3350,657 @@ const CUETExamView = ({
         'marked': Object.values(cuetStatusMap).filter(v => v === 'marked').length,
         'answered-marked': Object.values(cuetStatusMap).filter(v => v === 'answered-marked').length,
     };
+
+    if (examType === 'nest') {
+      const currentAns = cuetAnswers[activeQuestion];
+      return (
+        <div key="nest-exam-container" className="fixed inset-0 bg-[#f4f7f9] text-slate-850 z-[90] flex flex-col font-sans select-none overflow-hidden">
+          {/* Header Bar (TCS iON Custom High Fidelity Style) */}
+          <header id="nest-header" className="h-[65px] bg-[#1e2833] text-white flex justify-between items-center px-4 sm:px-6 shrink-0 z-50 shadow-md border-b border-slate-900">
+            <div className="flex items-center gap-3">
+              <div className="bg-[#2f71b9] p-2 rounded">
+                <Monitor className="w-5 h-5 text-white animate-pulse" />
+              </div>
+              <div className="text-left">
+                <h1 id="nest-title" className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-100">
+                  NEST 2026 ONLINE SIMULATOR
+                </h1>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">TCS iON Assessment Systems</p>
+              </div>
+            </div>
+
+            {/* Quick Timer Dashboard Info */}
+            <div className="flex gap-4 sm:gap-6 items-center bg-[#121921] border border-slate-800 px-4 py-2 rounded-lg">
+              <div className="text-right">
+                <p className="text-[8px] font-black text-slate-400 uppercase mb-0.5 tracking-wider">Remaining Exam Time</p>
+                <div className="flex items-center gap-1.5 text-orange-400 font-mono font-black text-sm sm:text-lg tabular-nums">
+                  <Clock className="w-4 h-4 text-orange-400 animate-spin-slow shrink-0" />
+                  {formatTime(cuetTimeLeft)}
+                </div>
+              </div>
+            </div>
+          </header>
+
+          {/* Section Selector Custom Bar */}
+          <div id="nest-section-bar" className="bg-[#2f71b9] px-4 py-1.5 flex items-center justify-between border-b border-[#245994] shadow-inner shrink-0 text-white">
+            <div className="flex gap-1.5">
+              {subjects.map(sub => (
+                <button
+                  id={`sub-btn-${sub}`}
+                  key={sub}
+                  onClick={() => {
+                    setActiveNeetSubject(sub);
+                    const firstInSub = cuetQuestions.findIndex((q: any) => q.subject === sub);
+                    if (firstInSub !== -1) setActiveQuestion(firstInSub);
+                  }}
+                  className={`${activeNeetSubject === sub ? 'bg-white text-blue-900 font-extrabold border-b-2 border-orange-500 shadow-md' : 'bg-white/10 text-white/95 hover:bg-white/20'} px-5 py-2 rounded-md font-black text-[11px] uppercase tracking-wide transition-all`}
+                >
+                  {sub}
+                </button>
+              ))}
+            </div>
+            <div className="hidden md:flex items-center gap-2">
+              <span className="text-[10px] font-mono tracking-widest text-blue-100 font-black uppercase">TCS SECURITY PORTAL ENABLED</span>
+            </div>
+          </div>
+
+          {/* Top Utilities Toolbar */}
+          <div id="nest-toolbar" className="bg-slate-100 border-b border-slate-200 px-4 py-2 flex items-center justify-between shadow-sm text-xs text-slate-700 shrink-0 select-none">
+            <div className="flex items-center gap-2 font-bold">
+              <span className="text-slate-500 font-extrabold uppercase text-[9px] tracking-wider">Text Size Control:</span>
+              <button 
+                id="zoom-in"
+                onClick={() => setNestTextZoom((prev: number) => Math.min(150, prev + 10))} 
+                className="w-7 h-7 bg-white hover:bg-slate-50 rounded border border-slate-300 flex items-center justify-center font-black text-sm active:scale-95 transition-all text-slate-900 hover:border-slate-400 outline-none"
+                title="Zoom In Text (+)"
+              >
+                +
+              </button>
+              <button 
+                id="zoom-out"
+                onClick={() => setNestTextZoom((prev: number) => Math.max(70, prev - 10))} 
+                className="w-7 h-7 bg-white hover:bg-slate-50 rounded border border-slate-300 flex items-center justify-center font-black text-sm active:scale-95 transition-all text-slate-900 hover:border-slate-400 outline-none"
+                title="Zoom Out Text (-)"
+              >
+                -
+              </button>
+              <span className="text-[10px] font-mono bg-white border border-slate-250 px-2 py-1 rounded font-bold text-slate-600 shrink-0 shadow-xs">
+                {nestTextZoom}%
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 relative">
+              {/* Scientific Calculator Trigger Icon button */}
+              <button 
+                id="calc-trigger"
+                onClick={() => setIsCalculatorOpen((prev: boolean) => !prev)} 
+                className={`p-2 rounded border flex items-center gap-1.5 font-bold uppercase text-[10px] shadow-xs tracking-wider transition-all outline-none ${isCalculatorOpen ? 'bg-blue-600 text-white border-blue-600' : 'bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-950 hover:border-slate-350'}`}
+                title="Interactive Scientific Calculator"
+              >
+                <Calculator className="w-3.5 h-3.5" />
+                <span>Calculator</span>
+              </button>
+
+              {/* Floating Tooltip/Popover Legend trigger icon */}
+              <button 
+                id="legend-trigger"
+                onClick={() => setIsInfoOpen((prev: boolean) => !prev)} 
+                className={`p-2 rounded border flex items-center gap-1.5 font-bold text-[10px] shadow-xs tracking-wider transition-all outline-none ${isInfoOpen ? 'bg-blue-600 text-white border-blue-600' : 'bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-950'}`}
+                title="Detailed Legend Checklist"
+              >
+                <Info className="w-3.5 h-3.5" />
+                <span>Legend Status</span>
+              </button>
+
+              {/* Top Right Legend Info Tooltip Popup */}
+              {isInfoOpen && (
+                <div id="legend-popup" className="absolute right-0 top-11 bg-white p-4.5 rounded-lg shadow-2xl border border-slate-250 z-[999] w-[260px] cursor-default text-left select-none space-y-3 font-semibold text-slate-700 animate-fadeIn">
+                  <div className="flex items-center justify-between border-b pb-2">
+                    <span className="text-[10px] font-black uppercase text-slate-900 tracking-wider">Question Legend</span>
+                    <button onClick={() => setIsInfoOpen(false)} className="text-slate-400 hover:text-slate-600">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="space-y-2.5 text-[11px] font-bold text-slate-600">
+                    <div className="flex items-center gap-3">
+                      <span className="w-5 h-5 bg-[#5cb85c] text-white text-[10px] flex items-center justify-center font-black rounded-b-3xl rounded-t-lg border-t-2 border-green-800 shrink-0">3</span>
+                      <span>Answered Questions</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="w-5 h-5 bg-[#d9534f] text-white text-[10px] flex items-center justify-center font-black rounded-t-3xl rounded-b-lg border-b-2 border-red-700 shrink-0">2</span>
+                      <span>Not Answered Questions</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="w-5 h-5 bg-white border border-slate-350 text-[10px] flex items-center justify-center font-black rounded shrink-0 text-slate-900 text-center">1</span>
+                      <span>Not Visited Questions</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="w-5 h-5 bg-[#7a43b6] text-white text-[10px] flex items-center justify-center font-black rounded-full shrink-0">4</span>
+                      <span>Marked for Review</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="w-5 h-5 bg-[#7a43b6] text-white text-[10px] flex items-center justify-center font-black rounded-full relative after:content-[''] after:absolute after:bottom-0 after:right-0 after:w-2 after:h-2 after:bg-[#5cb85c] after:rounded-full after:border after:border-white shrink-0">5</span>
+                      <span>Answered & Marked Review</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+                {/* Interactive Draggable Scientific Calculator Widget Popup */}
+          {isCalculatorOpen && (
+            <div id="calculator-popup" className="fixed top-28 left-4 xs:left-auto xs:right-[350px] w-[320px] bg-[#eeeeee] border-2 border-[#87996b] rounded shadow-2xl z-[999] text-slate-800 flex flex-col font-sans select-none overflow-hidden pb-1 hover:border-[#2f71b9] transition-all duration-300">
+              {/* Calculator header bar */}
+              <div className="bg-[#2f71b9] text-white px-3 py-1.5 flex items-center justify-between text-xs font-black">
+                <span className="uppercase tracking-wider">Scientific Calculator</span>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setIsCalculatorOpen(false)} className="text-white hover:text-red-200">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Pad Container */}
+              <div className="p-2 space-y-2">
+                {/* OutPut display screen area */}
+                <div id="sciOutPut" className="bg-[#B8C6A3] text-[#000000] font-mono text-right px-2.5 py-1.5 rounded border border-[#87996b] shadow-inner font-extrabold text-[#000000] text-xl min-h-[46px] select-text tracking-normal flex items-center justify-end break-all overflow-hidden">
+                  {getCalcFormattedDisplay()}
+                </div>
+
+                {/* Keyboard Grid - Exact 5 Columns */}
+                <div className="grid grid-cols-5 gap-1 select-none">
+                  {/* Row 1 */}
+                  <button onClick={() => handleCalcKeyPress('sin')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[11px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none">sin</button>
+                  <button onClick={() => handleCalcKeyPress('cos')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[11px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none">cos</button>
+                  <button onClick={() => handleCalcKeyPress('tan')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[11px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none">tan</button>
+                  <div className="col-span-2 flex items-center justify-around text-[11px] text-[#262626] font-bold leading-none bg-[#e8e8e8]/50 border border-slate-300 rounded-[3px] h-7 px-1">
+                    <label className="flex items-center gap-1 cursor-pointer">
+                      <input 
+                        type="radio" 
+                        name="sci_deg_rad" 
+                        checked={cDegree === 'degree'} 
+                        onChange={() => setCDegree('degree')} 
+                        className="cursor-pointer scale-90"
+                      />
+                      <span>Deg</span>
+                    </label>
+                    <label className="flex items-center gap-1 cursor-pointer">
+                      <input 
+                        type="radio" 
+                        name="sci_deg_rad" 
+                        checked={cDegree === 'radians'} 
+                        onChange={() => setCDegree('radians')} 
+                        className="cursor-pointer scale-90"
+                      />
+                      <span>Rad</span>
+                    </label>
+                  </div>
+
+                  {/* Row 2 */}
+                  <button onClick={() => handleCalcKeyPress('asin')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[10px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none">sin⁻¹</button>
+                  <button onClick={() => handleCalcKeyPress('acos')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[10px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none">cos⁻¹</button>
+                  <button onClick={() => handleCalcKeyPress('atan')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[10px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none">tan⁻¹</button>
+                  <button onClick={() => handleCalcKeyPress('pi')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[11px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none">π</button>
+                  <button onClick={() => handleCalcKeyPress('e')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[11px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none font-sans italic">e</button>
+
+                  {/* Row 3 */}
+                  <button onClick={() => handleCalcKeyPress('pow')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[11px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none">xʸ</button>
+                  <button onClick={() => handleCalcKeyPress('x3')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[11px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none">x³</button>
+                  <button onClick={() => handleCalcKeyPress('x2')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[11px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none">x²</button>
+                  <button onClick={() => handleCalcKeyPress('ex')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[11px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none">eˣ</button>
+                  <button onClick={() => handleCalcKeyPress('10x')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[11px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none">10ˣ</button>
+
+                  {/* Row 4 */}
+                  <button onClick={() => handleCalcKeyPress('apow')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[11px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none">ʸ√x</button>
+                  <button onClick={() => handleCalcKeyPress('3x')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[11px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none">³√x</button>
+                  <button onClick={() => handleCalcKeyPress('sqrt')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[11px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none">√x</button>
+                  <button onClick={() => handleCalcKeyPress('ln')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[11px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none">ln</button>
+                  <button onClick={() => handleCalcKeyPress('log')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[11px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none">log</button>
+
+                  {/* Row 5 */}
+                  <button onClick={() => handleCalcKeyPress('(')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[11px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none">(</button>
+                  <button onClick={() => handleCalcKeyPress(')')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[11px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none">)</button>
+                  <button onClick={() => handleCalcKeyPress('1/x')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[11px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none">1/x</button>
+                  <button onClick={() => handleCalcKeyPress('pc')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[11px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none">%</button>
+                  <button onClick={() => handleCalcKeyPress('n!')} className="bg-[#C8D8E8] border border-[#262626] rounded-[3px] text-[#185290] font-bold text-[11px] h-7 flex items-center justify-center cursor-pointer hover:bg-[#b0c8e0] active:bg-[#013f7d] active:text-white transition-all outline-none">n!</button>
+
+                  {/* Row 6 */}
+                  <button onClick={() => handleCalcKeyPress('7')} className="bg-[#262626] border border-[#262626] rounded-[3px] text-white font-bold text-sm h-8 flex items-center justify-center cursor-pointer hover:bg-slate-700 active:bg-slate-500 transition-all outline-none">7</button>
+                  <button onClick={() => handleCalcKeyPress('8')} className="bg-[#262626] border border-[#262626] rounded-[3px] text-white font-bold text-sm h-8 flex items-center justify-center cursor-pointer hover:bg-slate-700 active:bg-slate-500 transition-all outline-none">8</button>
+                  <button onClick={() => handleCalcKeyPress('9')} className="bg-[#262626] border border-[#262626] rounded-[3px] text-white font-bold text-sm h-8 flex items-center justify-center cursor-pointer hover:bg-slate-700 active:bg-slate-500 transition-all outline-none">9</button>
+                  <button onClick={() => handleCalcKeyPress('+')} className="bg-[#cccccc] border border-[#262626] rounded-[3px] text-[#262626] font-bold text-lg h-8 flex items-center justify-center cursor-pointer hover:bg-[#b8b8b8] active:bg-[#111111] active:text-white transition-all outline-none">+</button>
+                  <button onClick={() => handleCalcKeyPress('MS')} className="bg-[#cccccc] border border-[#262626] rounded-[3px] text-[#262626] font-bold text-xs h-8 flex items-center justify-center cursor-pointer hover:bg-[#b8b8b8] active:bg-[#111111] active:text-white transition-all outline-none">MS</button>
+
+                  {/* Row 7 */}
+                  <button onClick={() => handleCalcKeyPress('4')} className="bg-[#262626] border border-[#262626] rounded-[3px] text-white font-bold text-sm h-8 flex items-center justify-center cursor-pointer hover:bg-slate-700 active:bg-slate-500 transition-all outline-none">4</button>
+                  <button onClick={() => handleCalcKeyPress('5')} className="bg-[#262626] border border-[#262626] rounded-[3px] text-white font-bold text-sm h-8 flex items-center justify-center cursor-pointer hover:bg-slate-700 active:bg-slate-500 transition-all outline-none">5</button>
+                  <button onClick={() => handleCalcKeyPress('6')} className="bg-[#262626] border border-[#262626] rounded-[3px] text-white font-bold text-sm h-8 flex items-center justify-center cursor-pointer hover:bg-slate-700 active:bg-slate-500 transition-all outline-none">6</button>
+                  <button onClick={() => handleCalcKeyPress('-')} className="bg-[#cccccc] border border-[#262626] rounded-[3px] text-[#262626] font-bold text-lg h-8 flex items-center justify-center cursor-pointer hover:bg-[#b8b8b8] active:bg-[#111111] active:text-white transition-all outline-none">-</button>
+                  <button onClick={() => handleCalcKeyPress('M+')} className="bg-[#cccccc] border border-[#262626] rounded-[3px] text-[#262626] font-bold text-xs h-8 flex items-center justify-center cursor-pointer hover:bg-[#b8b8b8] active:bg-[#111111] active:text-white transition-all outline-none">M+</button>
+
+                  {/* Row 8 */}
+                  <button onClick={() => handleCalcKeyPress('1')} className="bg-[#262626] border border-[#262626] rounded-[3px] text-white font-bold text-sm h-8 flex items-center justify-center cursor-pointer hover:bg-slate-700 active:bg-slate-500 transition-all outline-none">1</button>
+                  <button onClick={() => handleCalcKeyPress('2')} className="bg-[#262626] border border-[#262626] rounded-[3px] text-white font-bold text-sm h-8 flex items-center justify-center cursor-pointer hover:bg-slate-700 active:bg-slate-500 transition-all outline-none">2</button>
+                  <button onClick={() => handleCalcKeyPress('3')} className="bg-[#262626] border border-[#262626] rounded-[3px] text-white font-bold text-sm h-8 flex items-center justify-center cursor-pointer hover:bg-slate-700 active:bg-slate-500 transition-all outline-none">3</button>
+                  <button onClick={() => handleCalcKeyPress('*')} className="bg-[#cccccc] border border-[#262626] rounded-[3px] text-[#262626] font-bold text-[15px] h-8 flex items-center justify-center cursor-pointer hover:bg-[#b8b8b8] active:bg-[#111111] active:text-white transition-all outline-none">×</button>
+                  <button onClick={() => handleCalcKeyPress('M-')} className="bg-[#cccccc] border border-[#262626] rounded-[3px] text-[#262626] font-bold text-xs h-8 flex items-center justify-center cursor-pointer hover:bg-[#b8b8b8] active:bg-[#111111] active:text-white transition-all outline-none">M-</button>
+
+                  {/* Row 9 */}
+                  <button onClick={() => handleCalcKeyPress('0')} className="bg-[#262626] border border-[#262626] rounded-[3px] text-white font-bold text-sm h-8 flex items-center justify-center cursor-pointer hover:bg-slate-700 active:bg-slate-500 transition-all outline-none">0</button>
+                  <button onClick={() => handleCalcKeyPress('.')} className="bg-[#262626] border border-[#262626] rounded-[3px] text-white font-bold text-sm h-8 flex items-center justify-center cursor-pointer hover:bg-slate-700 active:bg-slate-500 transition-all outline-none">.</button>
+                  <button onClick={() => handleCalcKeyPress('EXP')} className="bg-[#262626] border border-[#262626] rounded-[3px] text-white font-bold text-[10px] h-8 flex items-center justify-center cursor-pointer hover:bg-slate-700 active:bg-slate-500 transition-all outline-none">EXP</button>
+                  <button onClick={() => handleCalcKeyPress('/')} className="bg-[#cccccc] border border-[#262626] rounded-[3px] text-[#262626] font-bold text-sm h-8 flex items-center justify-center cursor-pointer hover:bg-[#b8b8b8] active:bg-[#111111] active:text-white transition-all outline-none">÷</button>
+                  <button onClick={() => handleCalcKeyPress('MR')} className="bg-[#cccccc] border border-[#262626] rounded-[3px] text-[#262626] font-bold text-xs h-8 flex items-center justify-center cursor-pointer hover:bg-[#b8b8b8] active:bg-[#111111] active:text-white transition-all outline-none">MR</button>
+
+                  {/* Row 10 */}
+                  <button onClick={() => handleCalcKeyPress('+/-')} className="bg-[#cccccc] border border-[#262626] rounded-[3px] text-[#262626] font-bold text-xs h-8 flex items-center justify-center cursor-pointer hover:bg-[#b8b8b8] active:bg-[#111111] active:text-white transition-all outline-none">±</button>
+                  <button onClick={() => handleCalcKeyPress('RND')} className="bg-[#cccccc] border border-[#262626] rounded-[3px] text-[#262626] font-bold text-[9px] h-8 flex items-center justify-center cursor-pointer hover:bg-[#b8b8b8] active:bg-[#111111] active:text-white transition-all outline-none">RND</button>
+                  <button onClick={() => handleCalcKeyPress('C')} className="bg-[#DCADB0] border border-[#262626] rounded-[3px] text-[#FF0000] font-bold text-sm h-8 flex items-center justify-center cursor-pointer hover:bg-[#d0999c] active:bg-[#ff0000] active:text-white transition-all outline-none">C</button>
+                  <button onClick={() => handleCalcKeyPress('=')} className="bg-[#DCADB0] border border-[#262626] rounded-[3px] text-[#FF0000] font-bold text-[16px] h-8 flex items-center justify-center cursor-pointer hover:bg-[#d0999c] active:bg-[#ff0000] active:text-white transition-all outline-none font-black">=</button>
+                  <button onClick={() => handleCalcKeyPress('MC')} className="bg-[#cccccc] border border-[#262626] rounded-[3px] text-[#262626] font-bold text-xs h-8 flex items-center justify-center cursor-pointer hover:bg-[#b8b8b8] active:bg-[#111111] active:text-white transition-all outline-none">MC</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Core Layout Split */}
+          <div className="flex-1 flex overflow-hidden relative">
+            {/* Left Main Question Content Panel */}
+            <div className="flex-1 flex flex-col bg-white border-r relative select-text overflow-hidden">
+              {/* Question Index sub-toolbar */}
+              <div className="bg-slate-50 px-6 py-2.5 border-b flex justify-between items-center shrink-0">
+                <h2 className="text-xs sm:text-xs font-black text-slate-700 uppercase tracking-wider">
+                  Question Block - {activeQuestion + 1}
+                </h2>
+                <div className="flex items-center gap-2">
+                  <span className="bg-indigo-100 border border-indigo-200 text-indigo-800 text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wide">
+                    {currentQ?.subject || 'general'} section
+                  </span>
+                </div>
+              </div>
+
+              {/* Main scrollable body for Question + Form options */}
+              <div className="flex-1 p-6 sm:p-10 overflow-y-auto select-none">
+                {/* Dynamically zoomed question content */}
+                <div 
+                  style={{ fontSize: `${1 * (nestTextZoom / 100)}rem` }} 
+                  className="font-bold text-slate-900 leading-relaxed mb-8 select-text whitespace-pre-wrap"
+                >
+                  {currentQ?.question}
+                </div>
+
+                <div className="grid grid-cols-1 gap-3.5 max-w-2xl select-text">
+                  {currentQ?.options.map((opt: string, i: number) => {
+                    const isSelected = cuetAnswers[activeQuestion] === i.toString();
+                    return (
+                      <div 
+                        key={i} 
+                        onClick={() => setCuetAnswers({...cuetAnswers, [activeQuestion]: i.toString()})}
+                        className={`flex items-center gap-4 group p-4 bg-white hover:bg-slate-50 border-2 rounded-xl transition-all cursor-pointer ${isSelected ? 'border-blue-605 bg-blue-50/10 shadow-xs' : 'border-slate-100'}`}
+                      >
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCuetAnswers({...cuetAnswers, [activeQuestion]: i.toString()});
+                          }}
+                          className={`w-9 h-9 rounded-full border-2 flex items-center justify-center font-black text-xs shrink-0 transition-colors ${isSelected ? 'bg-blue-600 border-blue-600 text-white shadow-xs' : 'border-slate-350 text-slate-500 group-hover:border-slate-400'}`}
+                        >
+                          {String.fromCharCode(65 + i)}
+                        </button>
+                        <span style={{ fontSize: `${0.875 * (nestTextZoom / 100)}rem` }} className={`font-bold transition-colors ${isSelected ? 'text-slate-900' : 'text-slate-650'}`}>{opt}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Collapsing arrow inside left panel right border */}
+              <button 
+                onClick={() => setIsRightDrawerOpen((prev: boolean) => !prev)}
+                className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-16 bg-[#2f71b9] hover:bg-blue-700 text-white rounded-l-md border-y border-l border-blue-400 flex items-center justify-center cursor-pointer shadow-lg outline-none transition-all group z-30"
+                title={isRightDrawerOpen ? "Collapse Right Palette Dashboard" : "Expand Right Palette Dashboard"}
+              >
+                <span className="text-[10px] font-black text-center flex items-center justify-center select-none text-white transition-transform group-hover:scale-110">
+                  {isRightDrawerOpen ? '❯' : '❮'}
+                </span>
+              </button>
+
+              {/* Compliance Bottom Action bar */}
+              <div id="nest-action-bar" className="bg-[#f4f7f9] border-t p-4 flex flex-wrap gap-2 items-center justify-between shrink-0">
+                <div className="flex flex-wrap gap-2">
+                  <button 
+                    id="mark-review-next"
+                    onClick={() => handleAction('save-mark')} 
+                    className="bg-[#f0ad4e] hover:bg-[#ec971f] text-white px-5 py-2.5 rounded border border-[#eea236] font-bold text-[11px] uppercase shadow-xs active:scale-98 transition-all"
+                  >
+                    Mark for Review & Next
+                  </button>
+                  <button 
+                    id="clear-response"
+                    onClick={() => handleAction('clear')} 
+                    className="bg-white hover:bg-slate-50 text-slate-700 px-5 py-2.5 rounded border border-slate-300 font-bold text-[11px] uppercase shadow-xs active:scale-98 transition-all"
+                  >
+                    Clear Response
+                  </button>
+                </div>
+                <button 
+                  id="save-next"
+                  onClick={() => handleAction('save')} 
+                  className="bg-[#2a75d3] hover:bg-blue-700 text-white px-8 py-2.5 rounded border border-blue-600 font-black text-[11px] uppercase shadow-sm active:scale-98 transition-all"
+                >
+                  Save & Next
+                </button>
+              </div>
+
+              {/* Bottom Submit bar */}
+              <div id="nest-footer-bar" className="bg-[#121921] border-t border-slate-950 p-4 flex justify-between items-center text-white px-6 shrink-0 z-40">
+                <div className="flex gap-2">
+                  <button 
+                    id="prev-btn"
+                    onClick={() => setActiveQuestion((prev: number) => Math.max(0, prev - 1))} 
+                    className="px-6 py-2.5 bg-white/10 hover:bg-white/20 rounded font-black text-[10px] uppercase transition-all select-none"
+                  >
+                    &lt;&lt; BACK
+                  </button>
+                  <button 
+                    id="next-btn"
+                    onClick={() => setActiveQuestion((prev: number) => Math.min(cuetQuestions.length - 1, prev + 1))} 
+                    className="px-6 py-2.5 bg-white/10 hover:bg-white/20 rounded font-black text-[10px] uppercase transition-all select-none"
+                  >
+                    NEXT &gt;&gt;
+                  </button>
+                </div>
+                {/* Submit button inside panel bottom bar */}
+                <button 
+                  id="submit-paper"
+                  onClick={() => window.confirm('Are you sure you want to finalize and submit your Nest Exam?') && handleFinishExam()} 
+                  className="bg-[#2f71b9] hover:bg-blue-600 text-white border border-blue-500 px-9 py-2.5 rounded font-black text-[11px] uppercase shadow-md transition-all active:scale-98 shrink-0 tracking-wider font-extrabold"
+                >
+                  SUBMIT Paper
+                </button>
+              </div>
+            </div>
+
+            {/* Right Collapsible menu sidebar */}
+            {isRightDrawerOpen && (
+              <div id="nest-palette-drawer" className="relative w-full max-w-[300px] bg-[#1e2833] border-l border-slate-950 text-white flex flex-col transition-all z-20 shrink-0">
+                {/* Two main dual navigation tabs header */}
+                <div className="flex bg-[#121921] border-b border-slate-950 text-xs shrink-0 select-none">
+                  {/* Tab 1: Profile Tab */}
+                  <button
+                    id="tab-profile"
+                    onClick={() => setDrawerActiveTab('profile')}
+                    className={`flex-1 py-3 text-center font-black uppercase tracking-wider transition-colors border-r border-slate-950 ${drawerActiveTab === 'profile' ? 'bg-[#1e2833] text-orange-400 border-b-2 border-orange-500' : 'text-slate-400 hover:bg-[#1b2530] hover:text-white'}`}
+                  >
+                    Profile
+                  </button>
+                  {/* Tab 2: MORE Tab */}
+                  <button
+                    id="tab-more"
+                    onClick={() => setDrawerActiveTab('more')}
+                    className={`flex-1 py-3 text-center font-black uppercase tracking-wider transition-colors ${drawerActiveTab === 'more' ? 'bg-[#1e2833] text-orange-400 border-b-2 border-orange-500' : 'text-slate-400 hover:bg-[#1b2530] hover:text-white'}`}
+                  >
+                    More
+                  </button>
+                </div>
+
+                {/* Tab content area */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-5">
+                  {drawerActiveTab === 'profile' ? (
+                    <div className="space-y-4">
+                      {/* Sub Profile photo display containing injected User Information layout */}
+                      <div className="bg-[#121921] p-4 rounded-lg border border-slate-900 flex flex-col items-center text-center space-y-3 shadow-inner">
+                        <div className="w-20 h-20 bg-slate-950 rounded border-2 border-slate-800 overflow-hidden shadow-sm flex items-center justify-center shrink-0">
+                          {nestCandidatePhoto ? (
+                            <img src={nestCandidatePhoto} className="w-full h-full object-cover" alt="Avatar" referrerPolicy="no-referrer" />
+                          ) : (
+                            <User className="w-10 h-10 text-slate-500" />
+                          )}
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-[8px] uppercase tracking-wider text-slate-400 font-bold block">Candidate Name</p>
+                          <h4 id="perf-candidate-name" className="text-xs font-black text-orange-400 uppercase tracking-tight truncate max-w-[180px]">{nestCandidateName}</h4>
+                        </div>
+                        <div className="w-full h-[0.5px] bg-slate-800 my-0.5" />
+                        <div className="space-y-0.5">
+                          <p className="text-[8px] uppercase tracking-wider text-slate-400 font-bold block">Login ID</p>
+                          <p className="font-mono text-xs text-white font-extrabold pb-1">{nestUserId || '11111'}</p>
+                        </div>
+                      </div>
+
+                      {/* Display Question metrics counters summary */}
+                      <div className="bg-[#121921] p-3 rounded-lg border border-slate-900 space-y-2">
+                        <span className="text-[8px] uppercase tracking-wider text-slate-450 font-black block border-b border-slate-800 pb-1 mb-1">Status Summary</span>
+                        <div className="grid grid-cols-2 gap-y-2 gap-x-1.5 text-[9px] font-bold">
+                          <div className="flex items-center gap-1.5 leading-none">
+                            <span className="w-4 h-4 rounded bg-[#5cb85c] text-white flex items-center justify-center font-black text-[9px] shrink-0">A</span>
+                            <span className="text-slate-300 uppercase block truncate">Ans: {counts['answered']}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 leading-none">
+                            <span className="w-4 h-4 rounded bg-[#d9534f] text-white flex items-center justify-center font-black text-[9px] shrink-0">NA</span>
+                            <span className="text-slate-300 uppercase block truncate">Unans: {counts['not-answered']}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 leading-none">
+                            <span className="w-4 h-4 bg-white text-slate-900 border flex items-center justify-center font-black text-[9px] shrink-0">NV</span>
+                            <span className="text-slate-300 uppercase block truncate">Novis: {counts['not-visited']}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 leading-none">
+                            <span className="w-4 h-4 rounded-full bg-[#7a43b6] text-white flex items-center justify-center font-black text-[9px] shrink-0">MR</span>
+                            <span className="text-slate-300 uppercase block truncate">Marked: {counts['marked']}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      <span className="text-[8px] uppercase tracking-wider text-slate-400 font-extrabold block border-b border-slate-800 pb-1 mb-2">Exam Asset Menus</span>
+                      
+                      <button 
+                        id="view-inst-trigger"
+                        onClick={() => setMoreTabSubModal('instructions')}
+                        className="w-full bg-[#121921] hover:bg-slate-800 text-slate-200 hover:text-orange-400 transition-colors border border-slate-900 p-2.5 rounded text-[10px] font-black text-left flex items-center justify-between outline-none"
+                      >
+                        <span>📄 General Instructions</span>
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                      </button>
+
+                      <button 
+                        id="view-scientific-trigger"
+                        onClick={() => setMoreTabSubModal('useful-data')}
+                        className="w-full bg-[#121921] hover:bg-slate-800 text-slate-200 hover:text-orange-400 transition-colors border border-slate-900 p-2.5 rounded text-[10px] font-black text-left flex items-center justify-between outline-none"
+                      >
+                        <span>🧪 Constants Useful Data</span>
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                      </button>
+
+                      <button 
+                        id="view-group-trigger"
+                        onClick={() => setMoreTabSubModal('group')}
+                        className="w-full bg-[#121921] hover:bg-slate-800 text-slate-200 hover:text-orange-400 transition-colors border border-slate-900 p-2.5 rounded text-[10px] font-black text-left flex items-center justify-between outline-none"
+                      >
+                        <span>📁 Group Instructions</span>
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                      </button>
+
+                      <button 
+                        id="view-question-trigger"
+                        onClick={() => setMoreTabSubModal('question')}
+                        className="w-full bg-[#121921] hover:bg-slate-800 text-slate-200 hover:text-orange-400 transition-colors border border-slate-900 p-2.5 rounded text-[10px] font-black text-left flex items-center justify-between outline-none"
+                      >
+                        <span>❓ Question Instructions</span>
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* High Fidelity Question Palette Grid */}
+                  <div className="border-t border-slate-800 pt-4 space-y-2">
+                    <span className="text-[10px] font-black uppercase text-orange-400 tracking-wider block">Question Palette</span>
+                    
+                    <div className="bg-[#121921] border border-slate-900 p-3 rounded shadow-inner">
+                      <div className="grid grid-cols-4 gap-2">
+                        {filteredQuestions.map((q: any) => {
+                          const i = q.originalIndex;
+                          const status = cuetStatusMap[i] || 'not-visited';
+                          const shapes: any = {
+                            'not-visited': 'bg-white border text-slate-900 rounded',
+                            'not-answered': 'bg-[#d9534f] text-white rounded-t-3xl rounded-b-lg border-b-2 border-red-700',
+                            'answered': 'bg-[#5cb85c] text-white rounded-b-3xl rounded-t-lg border-t-2 border-green-800',
+                            'marked': 'bg-[#7a43b6] text-white rounded-full border border-indigo-200',
+                            'answered-marked': 'bg-[#7a43b6] text-white rounded-full relative after:content-[""] after:absolute after:bottom-0 after:right-0 after:w-2 after:h-2 after:bg-[#5cb85c] after:rounded-full after:border after:border-white'
+                          };
+                          return (
+                            <button 
+                              key={i} 
+                              onClick={() => setActiveQuestion(i)} 
+                              className={`h-9 w-9 flex items-center justify-center font-black text-[11px] transition-all hover:brightness-110 shrink-0 ${shapes[status]} ${activeQuestion === i ? 'ring-2 ring-orange-500 ring-offset-1 select-none ring-offset-[#121921]' : ''}`}
+                            >
+                              {i + 1}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* More Tab SubModals structures */}
+          {moreTabSubModal && (
+            <div id="submodal-backdrop" className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-[1000] p-4 select-none">
+              <div className="bg-white rounded-lg shadow-2xl w-full max-w-xl overflow-hidden flex flex-col border border-slate-200 max-h-[80vh]">
+                {/* Modal Header */}
+                <div className="bg-[#2f71b9] text-white px-5 py-3 flex items-center justify-between shrink-0">
+                  <span className="text-[11px] font-black uppercase tracking-wider">
+                    {moreTabSubModal === 'instructions' && '📄 General Exam Guidelines'}
+                    {moreTabSubModal === 'useful-data' && '🧪 Fundamental Constants'}
+                    {moreTabSubModal === 'group' && '📁 Group Specific Instructions'}
+                    {moreTabSubModal === 'question' && '❓ Question Guidelines'}
+                  </span>
+                  <button onClick={() => setMoreTabSubModal(null)} className="text-white hover:text-slate-200 outline-none">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Sub Modals Body Content */}
+                <div id="submodal-body" className="p-5 overflow-y-auto text-xs leading-relaxed font-bold text-slate-700">
+                  {moreTabSubModal === 'instructions' && (
+                    <div className="space-y-3.5">
+                      <p className="font-extrabold text-slate-900 border-b pb-1">TCS iON Examination Guidelines:</p>
+                      <ol className="list-decimal pl-4.5 space-y-2 text-slate-650">
+                        <li>The clock will be set at the server. The countdown timer in the top right will display the remaining time. When the timer reaches zero, the examination will end by itself automatically.</li>
+                        <li>
+                          <p>Question states color-coded symbol palette glossary checklist:</p>
+                          <div className="grid grid-cols-1 gap-2 mt-2.5 pl-1">
+                            <div className="flex items-center gap-3">
+                              <span className="w-5 h-5 bg-white border border-slate-350 text-[10px] flex items-center justify-center font-black rounded shrink-0 text-slate-900">1</span>
+                              <span>Not Visited yet.</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="w-5 h-5 bg-[#d9534f] text-white text-[10px] flex items-center justify-center font-black rounded-t-3xl rounded-b-lg border-b-2 border-red-700 shrink-0">2</span>
+                              <span>Not Answered.</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="w-5 h-5 bg-[#5cb85c] text-white text-[10px] flex items-center justify-center font-black rounded-b-3xl rounded-t-lg border-t-2 border-green-800 shrink-0">3</span>
+                              <span>Answered Question.</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="w-5 h-5 bg-[#7a43b6] text-white text-[10px] flex items-center justify-center font-black rounded-full shrink-0">4</span>
+                              <span>Marked for Review but unanswered.</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="w-5 h-5 bg-[#7a43b6] text-white text-[10px] flex items-center justify-center font-black rounded-full relative after:content-[''] after:absolute after:bottom-0 after:right-0 after:w-2 after:h-2 after:bg-[#5cb85c] after:rounded-full after:border after:border-white shrink-0">5</span>
+                              <span>Answered & Marked for Review (Evaluated).</span>
+                            </div>
+                          </div>
+                        </li>
+                      </ol>
+                    </div>
+                  )}
+
+                  {moreTabSubModal === 'useful-data' && (
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center bg-slate-50 border p-2.5 rounded mb-2">
+                        <span className="font-extrabold uppercase text-[9px] text-slate-500">Language preference:</span>
+                        <select className="bg-white border text-xs px-2 py-0.5 rounded font-black outline-none border-slate-350">
+                          <option>English</option>
+                          <option>Hindi</option>
+                        </select>
+                      </div>
+                      
+                      <div className="border border-slate-200 rounded overflow-hidden">
+                        <table className="w-full text-left border-collapse text-[10px] font-bold">
+                          <thead>
+                            <tr className="bg-slate-100 border-b border-slate-205 font-black text-slate-800">
+                              <th className="p-2 border-r">Physical Constant</th>
+                              <th className="p-2 border-r">Symbol</th>
+                              <th className="p-2">Value</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y text-slate-650 font-medium">
+                            <tr>
+                              <td className="p-2 border-r capitalization bg-slate-50/20 font-bold text-slate-800">Planck's Constant</td>
+                              <td className="p-2 border-r font-mono font-bold">h</td>
+                              <td className="p-2 font-mono text-slate-900 font-extrabold">6.626 x 10⁻³⁴ J·s</td>
+                            </tr>
+                            <tr>
+                              <td className="p-2 border-r capitalization bg-slate-50/20 font-bold text-slate-800">Speed of light in vacuum</td>
+                              <td className="p-2 border-r font-mono font-bold">c</td>
+                              <td className="p-2 font-mono text-slate-900 font-extrabold">3.00 x 10⁸ m/s</td>
+                            </tr>
+                            <tr>
+                              <td className="p-2 border-r capitalization bg-slate-50/20 font-bold text-slate-800">Gas constant</td>
+                              <td className="p-2 border-r font-mono font-bold">R</td>
+                              <td className="p-2 font-mono text-slate-900 font-extrabold">8.314 J/(mol·K)</td>
+                            </tr>
+                            <tr>
+                              <td className="p-2 border-r capitalization bg-slate-50/20 font-bold text-slate-800">Avogadro constant</td>
+                              <td className="p-2 border-r font-mono font-bold">N_A</td>
+                              <td className="p-2 font-mono text-slate-900 font-extrabold">6.022 x 10²³ mol⁻¹</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {(moreTabSubModal === 'group' || moreTabSubModal === 'question') && (
+                    <div className="space-y-4">
+                      {/* Warning Banner at top representing running timer banner alert */}
+                      <div className="bg-amber-50 border border-amber-250 p-3 rounded-lg flex items-start gap-2 h-auto shadow-inner">
+                        <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5 animate-bounce" />
+                        <div>
+                          <p className="text-[10px] font-black text-amber-900 uppercase">Attention Exam Taker:</p>
+                          <p className="text-[10px] font-bold text-amber-850 mt-0.5">
+                            Note that the timer is ticking. Kindly close this window to attend to the questions.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="py-8 border border-dashed rounded bg-slate-50 text-center text-slate-500 font-extrabold">
+                        The instructions are not available in the selected language.
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Modal Footer */}
+                <div className="bg-slate-50 px-4 py-2.5 border-t flex justify-end shrink-0">
+                  <button 
+                    onClick={() => setMoreTabSubModal(null)} 
+                    className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-black uppercase text-[10px] px-3.5 py-1.5 rounded"
+                  >
+                    Close Dialog
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
 
     return (
       <div className="fixed inset-0 bg-[#f4f7f9] text-slate-800 z-[90] flex flex-col font-sans">
