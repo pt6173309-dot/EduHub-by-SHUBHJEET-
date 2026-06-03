@@ -1323,6 +1323,117 @@ const TeacherDashboard = ({
   </div>
 );
 
+const MathOrImageRenderer: React.FC<{ text: string; className?: string; imgClassName?: string }> = ({ text, className = "", imgClassName = "" }) => {
+  if (!text) return null;
+
+  const trimmed = text.trim();
+
+  // Parse out prefix like "A. ", "B) ", etc if present, to inspect the actual payload
+  const prefixMatch = trimmed.match(/^([A-D])(?:[\.\)\s-]+\s*)(.*)$/i);
+  let prefix = "";
+  let payload = trimmed;
+  if (prefixMatch) {
+    prefix = prefixMatch[1] + ". ";
+    payload = prefixMatch[2].trim();
+  }
+
+  // Check if payload is a direct image URL or base64 image
+  const isDirectImage = /^data:image\/[a-zA-Z+-]+;base64,[a-zA-Z0-9+/=]+$/i.test(payload) || 
+    /^(https?:\/\/.*\.(?:png|jpg|jpeg|gif|webp|svg|bmp))(?:\?.*)?$/i.test(payload);
+
+  if (isDirectImage) {
+    return (
+      <div className="flex flex-col items-start gap-1">
+        {prefix && <span className={`${className} font-extrabold mr-2`}>{prefix}</span>}
+        <img 
+          src={payload} 
+          alt="Option Diagram/Image" 
+          className={`max-h-56 max-w-full rounded-lg object-contain my-1 select-none bg-white p-2 border border-slate-200 shadow-sm ${imgClassName}`}
+          referrerPolicy="no-referrer"
+        />
+      </div>
+    );
+  }
+
+  // Check if it's markdown image format: ![alt](url)
+  const markdownImgRegex = /!\[.*?\]\((.*?)\)/;
+  const mdMatch = payload.match(markdownImgRegex);
+  if (mdMatch && mdMatch[1]) {
+    const imageUrl = mdMatch[1];
+    const textWithoutImg = payload.replace(markdownImgRegex, '').trim();
+    return (
+      <div className="flex flex-col gap-1 items-start">
+        <div className="flex items-center">
+          {prefix && <span className={`${className} font-extrabold mr-1`}>{prefix}</span>}
+          {textWithoutImg && <span className={className}>{textWithoutImg}</span>}
+        </div>
+        <img 
+          src={imageUrl} 
+          alt="Option Diagram/Image" 
+          className={`max-h-56 max-w-full rounded-lg object-contain my-1 select-none bg-white p-2 border border-slate-200 shadow-sm ${imgClassName}`}
+          referrerPolicy="no-referrer"
+        />
+      </div>
+    );
+  }
+
+  // Check if it contains an image URL inside the payload
+  const urlRegex = /(https?:\/\/[^\s]+(?:\.(?:png|jpg|jpeg|gif|webp|svg|bmp))(?:\?[^\s]+)?)/i;
+  const urlMatch = payload.match(urlRegex);
+  if (urlMatch && urlMatch[1]) {
+    const imageUrl = urlMatch[1];
+    const textWithoutImg = payload.replace(urlRegex, '').trim();
+    return (
+      <div className="flex flex-col gap-1 items-start">
+        <div className="flex items-center">
+          {prefix && <span className={`${className} font-extrabold mr-1`}>{prefix}</span>}
+          {textWithoutImg && <span className={className}>{textWithoutImg}</span>}
+        </div>
+        <img 
+          src={imageUrl} 
+          alt="Option Diagram/Image" 
+          className={`max-h-56 max-w-full rounded-lg object-contain my-1 select-none bg-white p-2 border border-slate-200 shadow-sm ${imgClassName}`}
+          referrerPolicy="no-referrer"
+        />
+      </div>
+    );
+  }
+
+  // Fallback for general image-like URLs (e.g. cloud bucket urls or base64 data URLs)
+  const startsWithHttp = /^https?:\/\/[^\s]+$/i.test(payload);
+  const isBase64 = /^data:image\//i.test(payload);
+  if (startsWithHttp || isBase64) {
+    const hasImageKeywords = payload.includes("/image") || 
+      payload.includes("drive.google.com/uc") || 
+      payload.includes("googleapis.com") || 
+      payload.includes("cloudinary.com") ||
+      payload.includes("img") ||
+      payload.includes("photo") ||
+      isBase64;
+      
+    if (hasImageKeywords) {
+      return (
+        <div className="flex flex-col items-start gap-1">
+          {prefix && <span className={`${className} font-extrabold mr-2`}>{prefix}</span>}
+          <img 
+            src={payload} 
+            alt="Option Diagram/Image" 
+            className={`max-h-56 max-w-full rounded-lg object-contain my-1 select-none bg-white p-2 border border-slate-200 shadow-sm ${imgClassName}`}
+            referrerPolicy="no-referrer"
+          />
+        </div>
+      );
+    }
+  }
+
+  // Default fallback: return normal text with its prefix if present
+  return (
+    <span className={className}>
+      {prefix}{payload}
+    </span>
+  );
+};
+
 const AppContent: React.FC = () => {
   // Exam Hub state
   const [examType, setExamType] = useState<'cuet' | 'neet' | 'jee' | 'nest' | null>(null);
@@ -1879,6 +1990,7 @@ const CUETExamView = ({
   const [sendingEmail, setSendingEmail] = useState<boolean>(false);
   const [emailSentStatus, setEmailSentStatus] = useState<'idle' | 'success' | 'failure' | 'sending'>('idle');
   const [emailErrorMsg, setEmailErrorMsg] = useState<string>('');
+  const [gmailAuthError, setGmailAuthError] = useState<string | null>(null);
 
   const base64SafeUrl = (str: string) => {
     const utf8Bytes = new TextEncoder().encode(str);
@@ -2127,12 +2239,14 @@ const CUETExamView = ({
 
   const handleGoogleSignIn = async () => {
     try {
+      setGmailAuthError(null);
       const provider = new GoogleAuthProvider();
       provider.addScope('https://www.googleapis.com/auth/gmail.send');
       const result = await signInWithPopup(auth, provider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (credential?.accessToken) {
         setGmailToken(credential.accessToken);
+        setGmailAuthError(null);
         if (result.user.email) setGmailUserEmail(result.user.email);
         if (result.user.displayName) setGmailUserName(result.user.displayName);
         if (cuetStatus === 'finished' && cuetResult) {
@@ -2142,7 +2256,16 @@ const CUETExamView = ({
     } catch (err: any) {
       console.error("Gmail authorization issue:", err);
       setEmailSentStatus('failure');
-      setEmailErrorMsg(err?.message || "Google Authentication failed. Please try again.");
+      const errCode = err?.code || "";
+      const errMsg = err?.message || "";
+      
+      if (errCode === 'auth/popup-closed-by-user' || errCode === 'auth/cancelled-popup-request' || errMsg.includes('closed') || errMsg.includes('cancel')) {
+        setGmailAuthError("The Google sign-in window was closed. To link your account: click 'Authorize Gmail Account' again, then click on 'Advanced' -> 'Go to react-example (unsafe)' inside the popup to bypass the validation screen.");
+        setEmailErrorMsg("Authorization popup was closed. Click 'Advanced' -> 'Go to react-example (unsafe)' to proceed.");
+      } else {
+        setGmailAuthError(errMsg || "Google Authentication failed. Please try again.");
+        setEmailErrorMsg(errMsg || "Google Authentication failed. Please try again.");
+      }
     }
   };
 
@@ -2924,6 +3047,22 @@ const CUETExamView = ({
               <p className="text-xs text-slate-400 leading-relaxed max-w-xl">
                 Authorize your Google account to automatically dispatch your comprehensive A-Z scorecard, performance metrics, and subject analysis to <strong className="text-slate-200">jitendrakumart557@gmail.com</strong> and <strong className="text-slate-200">pt617339@gmail.com</strong> right after final submission.
               </p>
+              {gmailAuthError && (
+                <div id="gmail-bypass-guide-card" className="mt-4 bg-red-950/40 border border-red-500/30 rounded-2xl p-4 sm:p-5 text-left space-y-2">
+                  <div className="flex items-center gap-2 text-red-400 font-bold">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span className="text-xs uppercase tracking-wider font-extrabold">How to bypass Google's "App Not Verified" warning:</span>
+                  </div>
+                  <p className="text-slate-300 leading-relaxed text-[11px]">
+                    Since this is a custom sandbox development portal built specifically for your mock practices, Google flags it as unverified. This is completely safe to bypass:
+                  </p>
+                  <ol className="list-decimal pl-4 space-y-1.5 text-slate-300 text-[11px] font-medium">
+                    <li>Click <strong className="text-white underline">"Advanced"</strong> or <strong className="text-white">"Advanced settings"</strong> on Google's warning window.</li>
+                    <li>Click the link that says <strong className="text-indigo-300 hover:underline">"Go to react-example (unsafe)"</strong> (this is this applet's identifier).</li>
+                    <li>Make sure to select/trust the option to allow the application to send emails on your behalf, then click <strong className="text-white">"Continue / Accept"</strong>.</li>
+                  </ol>
+                </div>
+              )}
             </div>
           </div>
           <div className="shrink-0 w-full md:w-auto flex justify-center">
@@ -4984,9 +5123,9 @@ const CUETExamView = ({
                 {/* Dynamically zoomed question content */}
                 <div 
                   style={{ fontSize: `${1 * (nestTextZoom / 100)}rem` }} 
-                  className="font-bold text-slate-900 leading-relaxed mb-4 select-text whitespace-pre-wrap"
+                  className="font-bold text-slate-900 leading-relaxed mb-4 select-text whitespace-pre-wrap animate-fade-in"
                 >
-                  {currentQ?.question}
+                  <MathOrImageRenderer text={currentQ?.question || ''} />
                 </div>
 
                 {/* Dynamically Rendered SVG Diagrams/Figures */}
@@ -5020,7 +5159,9 @@ const CUETExamView = ({
                         >
                           {String.fromCharCode(65 + i)}
                         </button>
-                        <span style={{ fontSize: `${0.875 * (nestTextZoom / 100)}rem` }} className={`font-bold transition-colors ${isSelected ? 'text-black font-extrabold' : 'text-neutral-950'}`}>{opt}</span>
+                        <span style={{ fontSize: `${0.875 * (nestTextZoom / 100)}rem` }} className={`font-bold transition-colors ${isSelected ? 'text-black font-extrabold' : 'text-neutral-950'}`}>
+                          <MathOrImageRenderer text={opt} />
+                        </span>
                       </div>
                     );
                   })}
@@ -5436,7 +5577,9 @@ const CUETExamView = ({
             </div>
             
             <div className="flex-1 p-6 sm:p-10 overflow-y-auto">
-              <div className="text-lg font-bold text-slate-800 leading-relaxed mb-6 select-none whitespace-pre-wrap">{currentQ?.question}</div>
+              <div className="text-lg font-bold text-slate-800 leading-relaxed mb-6 select-none whitespace-pre-wrap">
+                <MathOrImageRenderer text={currentQ?.question || ''} />
+              </div>
               
               {/* Dynamically Rendered SVG Diagrams/Figures */}
               {currentQ?.diagramSvg && (
@@ -5480,7 +5623,9 @@ const CUETExamView = ({
                       )}
                       
                       <div className={`flex-1 p-4 rounded-xl border-2 transition-all ${isSelected ? 'border-slate-800 bg-slate-50 shadow-sm' : 'border-slate-100'}`}>
-                        <span className={`text-sm font-bold ${isSelected ? 'text-slate-900' : 'text-slate-600'}`}>{opt}</span>
+                        <span className={`text-sm font-bold ${isSelected ? 'text-slate-900' : 'text-slate-600'}`}>
+                          <MathOrImageRenderer text={opt} />
+                        </span>
                       </div>
                     </div>
                   );
@@ -5688,7 +5833,9 @@ const CUETExamView = ({
                   {cuetResult?.details?.map((item: any, idx: number) => (
                     <div key={idx} className={`p-6 rounded-3xl border ${item.isCorrect ? 'bg-green-50 border-green-100' : item.selectedIdx === -1 ? 'bg-slate-50 border-slate-100' : 'bg-red-50 border-red-100'} transition-all`}>
                       <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Question {idx + 1}</p>
-                      <h4 className="text-sm font-bold text-slate-800 leading-relaxed mb-4">{item.question}</h4>
+                      <h4 className="text-sm font-bold text-slate-800 leading-relaxed mb-4">
+                        <MathOrImageRenderer text={item.question} />
+                      </h4>
                       
                       {/* Dynamically Rendered SVG Diagrams/Figures inside Review */}
                       {item.diagramSvg && (
@@ -5709,9 +5856,11 @@ const CUETExamView = ({
                           const isSelectedOpt = optIdx === item.selectedIdx;
                           return (
                             <div key={optIdx} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-between ${isCorrectOpt ? 'bg-green-600 text-white' : isSelectedOpt ? 'bg-red-600 text-white' : 'bg-white text-slate-600 border border-slate-100'}`}>
-                              <span>{String.fromCharCode(65 + optIdx)}) {opt}</span>
-                              {isCorrectOpt && <CheckCircle2 className="w-4 h-4" />}
-                              {isSelectedOpt && !isCorrectOpt && <AlertTriangle className="w-4 h-4" />}
+                              <span className="flex items-center gap-1.5 flex-wrap">
+                                {String.fromCharCode(65 + optIdx)}) <MathOrImageRenderer text={opt} className={isCorrectOpt || isSelectedOpt ? 'text-white' : 'text-slate-600'} />
+                              </span>
+                              {isCorrectOpt && <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                              {isSelectedOpt && !isCorrectOpt && <AlertTriangle className="w-4 h-4 shrink-0" />}
                             </div>
                           );
                         })}
