@@ -33,6 +33,7 @@ import {
   CheckCircle2,
   Calculator,
   Menu,
+  Mail,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import jsPDF from 'jspdf';
@@ -54,7 +55,7 @@ import {
   serverTimestamp,
   getDocFromServer
 } from 'firebase/firestore';
-import { getAuth, signInAnonymously } from 'firebase/auth';
+import { getAuth, signInAnonymously, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import firebaseConfig from './firebase-applet-config.json';
@@ -1871,6 +1872,286 @@ const CUETExamView = ({
 
   const isDegrees = cDegree === 'degree';
 
+  // Gmail integration states
+  const [gmailToken, setGmailToken] = useState<string | null>(null);
+  const [gmailUserEmail, setGmailUserEmail] = useState<string>('');
+  const [gmailUserName, setGmailUserName] = useState<string>('');
+  const [sendingEmail, setSendingEmail] = useState<boolean>(false);
+  const [emailSentStatus, setEmailSentStatus] = useState<'idle' | 'success' | 'failure' | 'sending'>('idle');
+  const [emailErrorMsg, setEmailErrorMsg] = useState<string>('');
+
+  const base64SafeUrl = (str: string) => {
+    const utf8Bytes = new TextEncoder().encode(str);
+    let binary = '';
+    const len = utf8Bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(utf8Bytes[i]);
+    }
+    return btoa(binary)
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+  };
+
+  const sendResultEmail = async (token: string, results: any) => {
+    if (!results) return;
+    setEmailSentStatus('sending');
+    setEmailErrorMsg('');
+
+    try {
+      const name = currentUser?.name || nestCandidateName || "PALLAVI";
+      const rollNo = nestUserId || "N/A";
+      const formattedExamType = examType === 'nest' ? 'NEST Exam' : examType === 'neet' ? 'NEET UG' : 'CUET';
+      const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+
+      // Build subject-wise rows if NEST
+      let subjectRows = '';
+      if (examType === 'nest') {
+        const subjectsList = ['Biology', 'Chemistry', 'Physics'];
+        const detailsList = results.details || [];
+        
+        subjectsList.forEach((sub) => {
+          const subQuestions = detailsList.filter((q: any) => q.subject?.toLowerCase() === sub.toLowerCase() || q.subject === sub);
+          const subCorrect = subQuestions.filter((q: any) => q.isCorrect).length;
+          const subIncorrect = subQuestions.filter((q: any) => q.selectedIdx !== -1 && !q.isCorrect).length;
+          const subLeft = subQuestions.filter((q: any) => q.selectedIdx === -1).length;
+          const subScore = subCorrect * 3 - subIncorrect;
+          const subMax = subQuestions.length * 3;
+
+          subjectRows += `
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 10px; font-weight: bold; color: #1e293b;">${sub.toUpperCase()}</td>
+              <td style="padding: 10px; text-align: center; color: #166534;">+${subCorrect}</td>
+              <td style="padding: 10px; text-align: center; color: #991b1b;">-${subIncorrect}</td>
+              <td style="padding: 10px; text-align: center; font-weight: bold; color: #0f172a;">${subScore} / ${subMax}</td>
+            </tr>
+          `;
+        });
+      }
+
+      // Build question by question analysis in HTML
+      let questionAnalysisHtml = '';
+      (results.details || []).forEach((item: any, idx: number) => {
+        const isQCorrect = item.isCorrect;
+        const isQUnattempted = item.selectedIdx === -1;
+        
+        let statusText = '';
+        let statusColor = '';
+        let statusBg = '';
+        
+        if (isQUnattempted) {
+          statusText = 'Unattempted';
+          statusColor = '#475569';
+          statusBg = '#f1f5f9';
+        } else if (isQCorrect) {
+          statusText = 'Correct';
+          statusColor = '#15803d';
+          statusBg = '#f0fdf4';
+        } else {
+          const correctChoice = String.fromCharCode(65 + item.correct);
+          const candidateChoice = String.fromCharCode(65 + item.selectedIdx);
+          statusText = `Incorrect (Selected: ${candidateChoice}, Correct: ${correctChoice})`;
+          statusColor = '#b91c1c';
+          statusBg = '#fef2f2';
+        }
+
+        let optionsHtml = '';
+        item.options.forEach((opt: string, optIdx: number) => {
+          const isCorrectOption = optIdx === item.correct;
+          const isSelectedOption = optIdx === item.selectedIdx;
+          
+          let optBg = '#ffffff';
+          let optBorder = '#e2e8f0';
+          let optColor = '#1e293b';
+          
+          if (isCorrectOption) {
+            optBg = '#15803d';
+            optColor = '#ffffff';
+            optBorder = '#15803d';
+          } else if (isSelectedOption) {
+            optBg = '#b91c1c';
+            optColor = '#ffffff';
+            optBorder = '#b91c1c';
+          }
+
+          optionsHtml += `
+            <div style="background-color: ${optBg}; border: 1px solid ${optBorder}; color: ${optColor}; padding: 8px 12px; margin-bottom: 6px; border-radius: 6px; font-size: 13px;">
+              ${String.fromCharCode(65 + optIdx)}) ${opt}
+            </div>
+          `;
+        });
+
+        const hasDiagram = item.diagramSvg ? '<em style="color:#64748b; font-size:11px;">[Embedded math/science diagram included in exam visual system]</em>' : '';
+        const qSub = item.subject ? `<span style="font-size:11px; font-weight:bold; color:#4f46e5; text-transform:uppercase;">[${item.subject}]</span>` : '';
+
+        questionAnalysisHtml += `
+          <div style="background-color: #ffffff; border: 1px solid #e2e8f0; padding: 16px; margin-bottom: 12px; border-radius: 8px;">
+            <p style="margin: 0 0 4px 0; font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: bold;">Question ${idx + 1} ${qSub}</p>
+            <p style="margin: 0 0 10px 0; font-size: 14px; font-weight: bold; color: #0f172a;">${item.question}</p>
+            ${hasDiagram}
+            <div style="margin-top: 8px;">
+              ${optionsHtml}
+            </div>
+            <div style="margin-top: 10px; display: inline-block; background-color: ${statusBg}; color: ${statusColor}; padding: 4px 10px; font-size: 12px; font-weight: bold; border-radius: 12px;">
+              Status: ${statusText}
+            </div>
+          </div>
+        `;
+      });
+
+      // Construct detailed email layout
+      const emailHtmlBody = `
+        <div style="font-family: Arial, sans-serif; background-color: #f8fafc; padding: 24px; color: #1e293b; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px;">
+          <div style="background-color: #1e293b; padding: 24px; text-align: center; border-radius: 12px 12px 0 0; color: #ffffff;">
+            <h1 style="margin: 0; font-size: 20px; font-weight: bold; letter-spacing: -0.5px;">${formattedExamType} 2026</h1>
+            <p style="margin: 4px 0 0 0; font-size: 12px; color: #93c5fd; font-weight: bold; text-transform: uppercase;">Official Examination Performance Report</p>
+          </div>
+
+          <div style="background-color: #ffffff; border-left: 4px solid #4f46e5; padding: 16px; margin-top: 16px; border-radius: 0 12px 12px 0; background-color: #eef2ff;">
+            <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #312e81;">
+              <strong>Software Developer Intimation:</strong> This performance report has been compiled and dispatched automatically by <strong>Shubhjeet Ram Tripathi (Software Developer)</strong> on behalf of the candidate who just completed their mock evaluation.
+            </p>
+          </div>
+
+          <div style="background-color: #ffffff; padding: 20px; margin-top: 16px; border-radius: 12px; border: 1px solid #e2e8f0;">
+            <h2 style="margin: 0 0 12px 0; font-size: 15px; font-weight: bold; color: #0f172a; border-bottom: 2px solid #f1f5f9; padding-bottom: 6px;">Candidate Profile</h2>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+              <tr>
+                <td style="padding: 4px 0; color: #64748b; width: 40%;"><strong>Candidate Name:</strong></td>
+                <td style="padding: 4px 0; color: #0f172a;">${name}</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px 0; color: #64748b;"><strong>Roll / Login ID:</strong></td>
+                <td style="padding: 4px 0; color: #0f172a;">${rollNo}</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px 0; color: #64748b;"><strong>Evaluation Stream:</strong></td>
+                <td style="padding: 4px 0; color: #0f172a;">${formattedExamType}</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px 0; color: #64748b;"><strong>Date of Exam:</strong></td>
+                <td style="padding: 4px 0; color: #0f172a;">${timestamp}</td>
+              </tr>
+            </table>
+          </div>
+
+          <div style="background-color: #ffffff; padding: 24px; margin-top: 16px; border-radius: 12px; border: 1px solid #e2e8f0; text-align: center;">
+            <p style="margin: 0; font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: bold; letter-spacing: 1px;">Overall Marks Obtained</p>
+            <h3 style="margin: 8px 0; font-size: 44px; font-weight: 800; color: #0f172a;">${results.score} <span style="font-size: 18px; color: #64748b;">/ ${results.total}</span></h3>
+            
+            <table style="width: 100%; border-collapse: collapse; margin-top: 12px;">
+              <tr>
+                <td style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px; text-align: center; width: 33%;">
+                  <p style="margin: 0; font-size: 10px; color: #166534; font-weight: bold; text-transform: uppercase;">Correct</p>
+                  <p style="margin: 2px 0 0 0; font-size: 18px; font-weight: bold; color: #15803d;">${results.correct}</p>
+                </td>
+                <td style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px; text-align: center; width: 33%;">
+                  <p style="margin: 0; font-size: 10px; color: #991b1b; font-weight: bold; text-transform: uppercase;">Incorrect</p>
+                  <p style="margin: 2px 0 0 0; font-size: 18px; font-weight: bold; color: #b91c1c;">${results.incorrect}</p>
+                </td>
+                <td style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; text-align: center; width: 33%;">
+                  <p style="margin: 0; font-size: 10px; color: #475569; font-weight: bold; text-transform: uppercase;">Left</p>
+                  <p style="margin: 2px 0 0 0; font-size: 18px; font-weight: bold; color: #334155;">${results.unattempted}</p>
+                </td>
+              </tr>
+            </table>
+          </div>
+
+          ${examType === 'nest' ? `
+          <div style="background-color: #ffffff; padding: 20px; margin-top: 16px; border-radius: 12px; border: 1px solid #e2e8f0;">
+            <h2 style="margin: 0 0 12px 0; font-size: 15px; font-weight: bold; color: #0f172a; border-bottom: 2px solid #f1f5f9; padding-bottom: 6px;">Subject Section Matrix</h2>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+              <tr style="background-color: #1e293b; color: #ffffff;">
+                <th style="padding: 8px; text-align: left;">Section</th>
+                <th style="padding: 8px; text-align: center;">Correct</th>
+                <th style="padding: 8px; text-align: center;">Incorrect</th>
+                <th style="padding: 8px; text-align: center;">Score</th>
+              </tr>
+              ${subjectRows}
+            </table>
+          </div>
+          ` : ''}
+
+          <div style="margin-top: 20px;">
+            <h2 style="margin: 0 0 12px 0; font-size: 15px; font-weight: bold; color: #0f172a;">Option-by-Option Submissions Report</h2>
+            ${questionAnalysisHtml}
+          </div>
+
+          <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #64748b; text-align: center; line-height: 1.5;">
+            <p style="margin: 0;">This email is a certified secure intimation of the digital testing platform.</p>
+            <p style="margin: 6px 0 0 0; font-size: 12px; color: #0f172a; font-weight: bold;">
+              Shubhjeet Ram Tripathi — Senior Software Developer
+            </p>
+          </div>
+        </div>
+      `;
+
+      const recipientList = ['jitendrakumart557@gmail.com', 'pt617339@gmail.com'];
+      const toValue = recipientList.join(', ');
+
+      const rfcMailString = [
+        `From: me`,
+        `To: ${toValue}`,
+        `Subject: ${formattedExamType} 2026 Submission Report - Candidate: ${name}`,
+        `MIME-Version: 1.0`,
+        `Content-Type: text/html; charset=utf-8`,
+        ``,
+        emailHtmlBody
+      ].join('\r\n');
+
+      const encodedMailRaw = base64SafeUrl(rfcMailString);
+
+      const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          raw: encodedMailRaw
+        })
+      });
+
+      if (!response.ok) {
+        const errorDetails = await response.json();
+        throw new Error(errorDetails.error?.message || 'Failed to dispatch email');
+      }
+
+      setEmailSentStatus('success');
+    } catch (err: any) {
+      console.error("Email send failed:", err);
+      setEmailSentStatus('failure');
+      setEmailErrorMsg(err?.message || String(err));
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.addScope('https://www.googleapis.com/auth/gmail.send');
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        setGmailToken(credential.accessToken);
+        if (result.user.email) setGmailUserEmail(result.user.email);
+        if (result.user.displayName) setGmailUserName(result.user.displayName);
+        if (cuetStatus === 'finished' && cuetResult) {
+          sendResultEmail(credential.accessToken, cuetResult);
+        }
+      }
+    } catch (err: any) {
+      console.error("Gmail authorization issue:", err);
+      setEmailSentStatus('failure');
+      setEmailErrorMsg(err?.message || "Google Authentication failed. Please try again.");
+    }
+  };
+
+  useEffect(() => {
+    if (cuetStatus === 'finished' && cuetResult && gmailToken && emailSentStatus === 'idle') {
+      sendResultEmail(gmailToken, cuetResult);
+    }
+  }, [cuetStatus, cuetResult, gmailToken, emailSentStatus]);
+
   const formatCalcValue = (val: number, enteredVal: boolean, fixedVal: number): string => {
     let E = "" + val;
     if (E.indexOf("N") >= 0 || (val === 2 * val && val === 1 + val)) {
@@ -2533,7 +2814,8 @@ const CUETExamView = ({
     
     // NEET Marking: +4, -1, 0
     // CUET Marking: +5, -1, 0
-    const correctScore = examType === 'neet' ? 4 : examType === 'nest' ? 4 : 5;
+    // NEST Marking: +3, -1, 0
+    const correctScore = examType === 'neet' ? 4 : examType === 'nest' ? 3 : 5;
     const incorrectPenalty = 1;
 
     const detailedResults = cuetQuestions.map((q: any, idx: number) => {
@@ -2571,20 +2853,31 @@ const CUETExamView = ({
 
   if (cuetStatus === 'selection') {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
-        <div className="max-w-6xl w-full grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 space-y-10">
+        {/* Portal Header */}
+        <div className="text-center space-y-3 max-w-2xl">
+          <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight uppercase">
+            Mock Assessment Portal
+          </h2>
+          <p className="text-slate-400 text-xs sm:text-sm font-medium leading-relaxed">
+            Select an examination stream to launch your timed practice evaluation. Your detailed diagnostic scorecard and question analysis will be compiled after submission.
+          </p>
+        </div>
+
+        {/* 3-Column Exams Grid */}
+        <div className="max-w-6xl w-full grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
           <motion.button 
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={() => { setExamType('cuet'); setCuetStatus('upload'); }}
-            className="bg-white p-12 rounded-[40px] text-center space-y-6 shadow-2xl border-4 border-transparent hover:border-blue-500 transition-all flex flex-col justify-between"
+            className="bg-white p-8 sm:p-12 rounded-[40px] text-center space-y-6 shadow-2xl border-4 border-transparent hover:border-blue-500 transition-all flex flex-col justify-between items-center"
           >
-            <div className="w-20 h-20 bg-blue-100 rounded-3xl flex items-center justify-center mx-auto">
-              <GraduationCap className="w-10 h-10 text-blue-600" />
+            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-blue-100 rounded-3xl flex items-center justify-center">
+              <GraduationCap className="w-8 h-8 sm:w-10 sm:h-10 text-blue-600" />
             </div>
             <div>
-              <h3 className="text-3xl font-black text-slate-900 tracking-tighter">CUET 2026</h3>
-              <p className="text-slate-500 font-bold uppercase text-xs mt-2 tracking-widest">Common University Entrance Test</p>
+              <h3 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tighter">CUET 2026</h3>
+              <p className="text-slate-500 font-bold uppercase text-[10px] sm:text-xs mt-2 tracking-widest">Common University Entrance Test</p>
             </div>
           </motion.button>
 
@@ -2592,14 +2885,14 @@ const CUETExamView = ({
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={() => { setExamType('neet'); setCuetStatus('upload'); }}
-            className="bg-white p-12 rounded-[40px] text-center space-y-6 shadow-2xl border-4 border-transparent hover:border-red-500 transition-all flex flex-col justify-between"
+            className="bg-white p-8 sm:p-12 rounded-[40px] text-center space-y-6 shadow-2xl border-4 border-transparent hover:border-red-500 transition-all flex flex-col justify-between items-center"
           >
-            <div className="w-20 h-20 bg-red-100 rounded-3xl flex items-center justify-center mx-auto">
-              <TrendingUp className="w-10 h-10 text-red-600" />
+            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-red-100 rounded-3xl flex items-center justify-center">
+              <TrendingUp className="w-8 h-8 sm:w-10 sm:h-10 text-red-600" />
             </div>
             <div>
-              <h3 className="text-3xl font-black text-slate-900 tracking-tighter">NEET UG</h3>
-              <p className="text-slate-500 font-bold uppercase text-xs mt-2 tracking-widest">National Eligibility cum Entrance Test</p>
+              <h3 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tighter">NEET UG</h3>
+              <p className="text-slate-500 font-bold uppercase text-[10px] sm:text-xs mt-2 tracking-widest">National Eligibility cum Entrance Test</p>
             </div>
           </motion.button>
 
@@ -2607,16 +2900,56 @@ const CUETExamView = ({
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={() => { setExamType('nest'); setCuetStatus('upload'); }}
-            className="bg-white p-12 rounded-[40px] text-center space-y-6 shadow-2xl border-4 border-transparent hover:border-emerald-500 transition-all flex flex-col justify-between"
+            className="bg-white p-8 sm:p-12 rounded-[40px] text-center space-y-6 shadow-2xl border-4 border-transparent hover:border-emerald-500 transition-all flex flex-col justify-between items-center"
           >
-            <div className="w-20 h-20 bg-emerald-100 rounded-3xl flex items-center justify-center mx-auto">
-              <Monitor className="w-10 h-10 text-emerald-600" />
+            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-emerald-100 rounded-3xl flex items-center justify-center">
+              <Monitor className="w-8 h-8 sm:w-10 sm:h-10 text-emerald-600" />
             </div>
             <div>
-              <h3 className="text-3xl font-black text-slate-900 tracking-tighter">NEST Exam</h3>
-              <p className="text-slate-500 font-bold uppercase text-xs mt-2 tracking-widest">National Entrance Screening Test</p>
+              <h3 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tighter">NEST Exam</h3>
+              <p className="text-slate-500 font-bold uppercase text-[10px] sm:text-xs mt-2 tracking-widest">National Entrance Screening Test</p>
             </div>
           </motion.button>
+        </div>
+
+        {/* Custom Auto Gmail Authorization Card */}
+        <div className="max-w-4xl w-full bg-slate-800/60 border border-slate-700/60 p-6 sm:p-8 rounded-[32px] shadow-xl flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="flex flex-col sm:flex-row items-center sm:items-start text-center sm:text-left gap-4">
+            <div className="w-12 h-12 bg-indigo-500/10 border border-indigo-400/20 rounded-2xl flex items-center justify-center shrink-0">
+              <Mail className="w-6 h-6 text-indigo-400" />
+            </div>
+            <div className="space-y-1">
+              <span className="text-[9px] font-black uppercase text-indigo-400 tracking-widest block">Automated Dispatch Registration</span>
+              <h4 className="text-lg font-black text-white tracking-tight">Configure Automatic Gmail Reports</h4>
+              <p className="text-xs text-slate-400 leading-relaxed max-w-xl">
+                Authorize your Google account to automatically dispatch your comprehensive A-Z scorecard, performance metrics, and subject analysis to <strong className="text-slate-200">jitendrakumart557@gmail.com</strong> and <strong className="text-slate-200">pt617339@gmail.com</strong> right after final submission.
+              </p>
+            </div>
+          </div>
+          <div className="shrink-0 w-full md:w-auto flex justify-center">
+            {!gmailToken ? (
+              <button 
+                onClick={handleGoogleSignIn}
+                className="w-full md:w-auto bg-white hover:bg-slate-100 text-slate-900 transition-all rounded-2xl py-3 px-5 font-black text-xs flex items-center justify-center gap-2.5 shadow-md active:scale-98 cursor-pointer"
+              >
+                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v3.9h6.6c-.28 1.5-1.12 2.77-2.38 3.63v3.02h3.85c2.25-2.07 3.67-5.11 3.67-8.48z" />
+                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.85-3.02c-1.07.72-2.44 1.16-4.08 1.16-3.14 0-5.8-2.12-6.75-4.97H1.12v3.12C3.1 21.36 7.28 24 12 24z" />
+                  <path fill="#FBBC05" d="M5.25 14.26a7.22 7.22 0 0 1 0-4.52V6.62H1.12a11.96 11.96 0 0 0 0 10.76l4.13-3.12z" />
+                  <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.43-3.43C17.93 1.19 15.24 0 12 0 7.28 0 3.1 2.64 1.12 6.62l4.13 3.12c.95-2.85 3.61-4.99 6.75-4.99z" />
+                </svg>
+                Authorize Gmail Account
+              </button>
+            ) : (
+              <div className="bg-emerald-500/10 border border-emerald-500/20 py-3 px-5 rounded-2xl flex items-center justify-center gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <div className="text-left">
+                  <p className="text-[9px] font-black text-emerald-400 uppercase tracking-widest leading-none mb-0.5">Integration Authorized</p>
+                  <p className="text-xs font-bold text-slate-200 truncate max-w-[150px] leading-none">{gmailUserEmail}</p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -2625,106 +2958,718 @@ const CUETExamView = ({
   const downloadDetailedPDF = async () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
-    let y = 20;
+    const pageHeight = doc.internal.pageSize.getHeight();
 
-    // Header
-    doc.setFontSize(22);
-    doc.setTextColor(0, 51, 153);
-    doc.text(`${examType === 'neet' ? 'NEET UG' : examType === 'nest' ? 'NEST Exam' : 'CUET'} 2026 PRACTICE PORTAL`, pageWidth / 2, y, { align: 'center' });
-    y += 10;
-    doc.setFontSize(14);
-    doc.setTextColor(100);
-    doc.text("EXAMINATION PERFORMANCE REPORT", pageWidth / 2, y, { align: 'center' });
-    y += 15;
+    const formatSecToMinSec = (s: number) => {
+      const mins = Math.floor(s / 60);
+      const secs = Math.round(s % 60);
+      return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+    };
 
-    // Candidate Info
-    doc.setDrawColor(200);
-    doc.line(15, y, pageWidth - 15, y);
-    y += 10;
-    doc.setFontSize(10);
-    doc.setTextColor(0);
-    doc.setFont("helvetica", "bold");
-    doc.text(`Candidate Name: ${currentUser?.name || "PALLAVI"}`, 20, y);
-    doc.text(`Exam ID: ${examType === 'neet' ? 'NEET' : examType === 'nest' ? 'NEST' : 'CUET'}2026-X7Y`, 150, y);
-    y += 10;
-    doc.text(`Total Score: ${cuetResult?.score} / ${cuetResult?.total}`, 20, y);
-    doc.text(`Date: ${new Date().toLocaleDateString()}`, 150, y);
-    y += 10;
-    doc.line(15, y, pageWidth - 15, y);
-    y += 15;
+    // Helper to capitalize strings
+    const statToCapital = (str: string) => {
+      if (!str) return "General";
+      return str.charAt(0).toUpperCase() + str.slice(1);
+    };
 
-    // Results Summary
-    doc.setFontSize(12);
-    doc.text("SUMMARY STATISTICS", 20, y);
-    y += 10;
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`- Correct Answers: ${cuetResult?.correct}`, 25, y);
-    y += 7;
-    doc.text(`- Incorrect Answers: ${cuetResult?.incorrect}`, 25, y);
-    y += 7;
-    doc.text(`- Unattempted: ${cuetResult?.unattempted}`, 25, y);
-    y += 15;
-
-    // Detailed Report Title
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("QUESTION-BY-QUESTION ANALYSIS (A-Z REPORT)", 20, y);
-    y += 10;
-
-    // Questions
-    doc.setFontSize(9);
-    (cuetResult?.details || []).forEach((item: any, index: number) => {
-      if (y > 270) {
-        doc.addPage();
-        y = 20;
+    // Helper to get estimated selection chances and suggestions
+    const getNestEstimation = (score: number) => {
+      if (score >= 115) {
+        return {
+          percentile: "99.5+",
+          chanceGen: "Excellent (Top Ranks)",
+          chanceEws: "Guaranteed Selection",
+          suggestion: "Outstanding performance! You are on track for a top merit rank at NISER/UM-DAE CEBS. Keep polishing your time management and stay calm on the actual exam day to lock in your top position.",
+          badgeColor: [34, 197, 94] // Emerald
+        };
+      } else if (score >= 95) {
+        return {
+          percentile: "98.5 - 99.4",
+          chanceGen: "Very High Chance",
+          chanceEws: "Very High Chance",
+          suggestion: "Excellent score! Your grasp over the syllabus is highly competitive. Focus on analyzing your minor error patterns and reducing silly mistakes to secure a solid rank.",
+          badgeColor: [132, 204, 22] // Light green
+        };
+      } else if (score >= 80) {
+        return {
+          percentile: "96.0 - 98.4",
+          chanceGen: "Borderline / Moderate",
+          chanceEws: "Good Chance",
+          suggestion: "Decent score, but on the borderline of the general category cutoff. To be safe, focus on error analysis of your weaker topics and solve more timed mock tests.",
+          badgeColor: [234, 179, 8] // Yellow
+        };
+      } else if (score >= 65) {
+        return {
+          percentile: "90.0 - 95.9",
+          chanceGen: "Low Chance",
+          chanceEws: "Borderline",
+          suggestion: "Your concepts are moderately clear, but your speed and accuracy require reinforcement. Focus on revising high-weightage chapters and avoid guessing answers to save negative marking.",
+          badgeColor: [249, 115, 22] // Orange
+        };
+      } else {
+        return {
+          percentile: "Below 90",
+          chanceGen: "Very Low",
+          chanceEws: "Low",
+          suggestion: "Extensive study and foundational revision are needed across all subjects. Make a strict study plan, focus heavily on textbook key exercises, and avoid guessing since negative marks (-1) damage your rank.",
+          badgeColor: [239, 68, 68] // Red
+        };
       }
+    };
+
+    // Helper to convert SVG to image
+    const svgToBase64Image = (svgString: string): Promise<string> => {
+      return new Promise((resolve) => {
+        if (!svgString || !svgString.trim()) {
+          resolve('');
+          return;
+        }
+        const img = new Image();
+        let cleanSvg = svgString.trim();
+        if (!cleanSvg.startsWith('<svg')) {
+          const svgMatch = cleanSvg.match(/<svg[\s\S]*<\/svg>/);
+          if (svgMatch) {
+             cleanSvg = svgMatch[0];
+          }
+        }
+        if (!cleanSvg.includes('xmlns=')) {
+          cleanSvg = cleanSvg.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+        }
+        try {
+          const svgBlob = new Blob([cleanSvg], { type: 'image/svg+xml;charset=utf-8' });
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const b64 = reader.result as string;
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.width || 400;
+              canvas.height = img.height || 200;
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              }
+              resolve(canvas.toDataURL('image/png'));
+            };
+            img.onerror = () => resolve('');
+            img.src = b64;
+          };
+          reader.onerror = () => resolve('');
+          reader.readAsDataURL(svgBlob);
+        } catch (e) {
+          console.error(e);
+          resolve('');
+        }
+      });
+    };
+
+    if (examType === 'nest') {
+      // OVERVIEW PAGE (Page 1)
+      let y = 15;
+
+      // Header Banner
+      doc.setFillColor(30, 41, 59); // Slate Hue
+      doc.rect(0, 0, pageWidth, 42, 'F');
 
       doc.setFont("helvetica", "bold");
-      const questionText = item.subject ? `[${item.subject}] ${item.question}` : item.question;
-      const questionLines = doc.splitTextToSize(`${index + 1}. ${questionText}`, pageWidth - 40);
-      doc.text(questionLines, 20, y);
-      y += (questionLines.length * 5) + 2;
+      doc.setFontSize(20);
+      doc.setTextColor(255, 255, 255);
+      doc.text("NEST 2026 PRACTICE PORTAL", pageWidth / 2, 16, { align: 'center' });
+      
+      doc.setFontSize(11);
+      doc.setTextColor(147, 197, 253);
+      doc.text("NATIONAL ENTRANCE SCREENING TEST - OFFICIAL PERFORMANCE REPORT", pageWidth / 2, 25, { align: 'center' });
 
-      item.options.forEach((opt: string, optIdx: number) => {
-        const prefix = String.fromCharCode(65 + optIdx) + ") ";
-        let color = [0, 0, 0];
-        let style = "normal";
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "italic");
+      doc.setTextColor(203, 213, 225);
+      doc.text("Conducted via TCS iON Assessment Systems • Powered by Google Gemini AI Engine", pageWidth / 2, 32, { align: 'center' });
 
-        if (optIdx === item.correct) {
-          color = [0, 153, 51]; // Green for correct
-          style = "bold";
-        }
+      // Core profile block
+      y = 48;
+      doc.setDrawColor(226, 232, 240);
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(15, y, 180, 48, 4, 4, 'FD');
+
+      // Candidate silhouette photo drawing on the right side of the card
+      const photoX = 160;
+      const photoY = y + 5;
+      const photoW = 28;
+      const photoH = 38;
+      doc.setFillColor(219, 234, 254);
+      doc.rect(photoX, photoY, photoW, photoH, 'F');
+      doc.setDrawColor(59, 130, 246);
+      doc.setLineWidth(0.5);
+      doc.rect(photoX, photoY, photoW, photoH, 'D');
+
+      // Draw head and shoulder silhouette representing candidate portrait
+      doc.setFillColor(37, 99, 235);
+      // Head circle
+      doc.ellipse(photoX + photoW/2, photoY + 14, 6, 6, 'F');
+      // Body arc/ellipse
+      doc.ellipse(photoX + photoW/2, photoY + 31, 11, 8, 'F');
+      
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7);
+      doc.setTextColor(37, 99, 235);
+      doc.text("CANDIDATE PHOTO", photoX + photoW/2, photoY + photoH - 2, { align: 'center' });
+
+      // Candidate Text Info (Left side of card)
+      doc.setTextColor(30, 41, 59);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text("CANDIDATE DOSSIER PROFILE", 20, y + 8);
+      
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(71, 85, 105);
+      doc.text("Candidate Name: ", 20, y + 16);
+      doc.text("Exam ID (Roll): ", 20, y + 22);
+      doc.text("Session ID: ", 20, y + 28);
+      doc.text("Assessment Date: ", 20, y + 34);
+      doc.text("System Protocol: ", 20, y + 40);
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(15, 23, 42);
+      doc.text(currentUser?.name || nestCandidateName || "PALLAVI", 52, y + 16);
+      doc.text(`NEST2026-${currentUser?.studentId || "NISER-93K2"}`, 52, y + 22);
+      doc.text("EXAM-SESSION-NEST-X7Y", 52, y + 28);
+      doc.text(new Date().toLocaleDateString() + " " + new Date().toLocaleTimeString(), 52, y + 34);
+      doc.text("TCS iON Security Shield Enforced", 52, y + 40);
+
+      // Section total marks breakdown
+      const score = cuetResult?.score || 0;
+      const total = cuetResult?.total || 0;
+      const correct = cuetResult?.correct || 0;
+      const incorrect = cuetResult?.incorrect || 0;
+      const left = cuetResult?.unattempted || 0;
+      const totalQuestions = cuetResult?.details?.length || 20;
+      const totalTimeLeft = cuetTimeLeft;
+      const totalTimeSpentSec = 3600 - totalTimeLeft;
+      
+      const overallTimeSpentStr = formatSecToMinSec(totalTimeSpentSec);
+      const overallAccuracy = (correct + incorrect) > 0 ? (correct / (correct + incorrect)) * 100 : 0;
+
+      // Stats Quick-Read Row
+      y = 101;
+      doc.setFillColor(241, 245, 249);
+      doc.roundedRect(15, y, 180, 18, 2, 2, 'F');
+      
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(100);
+      doc.text("TOTAL MARKS ACHIEVED", 20, y + 6);
+      doc.setTextColor(15, 23, 42);
+      doc.setFontSize(11);
+      doc.text(`${score} / ${total}`, 20, y + 13);
+
+      doc.setFontSize(8);
+      doc.setTextColor(100);
+      doc.text("ACCURACY %", 65, y + 6);
+      doc.setTextColor(34, 197, 94);
+      doc.setFontSize(11);
+      doc.text(`${overallAccuracy.toFixed(1)}%`, 65, y + 13);
+
+      doc.setFontSize(8);
+      doc.setTextColor(100);
+      doc.text("TOTAL TIME SPENT", 100, y + 6);
+      doc.setTextColor(15, 23, 42);
+      doc.setFontSize(11);
+      doc.text(overallTimeSpentStr, 100, y + 13);
+
+      doc.setFontSize(8);
+      doc.setTextColor(100);
+      doc.text("ATTEMPTED QUESTIONS", 145, y + 6);
+      doc.setTextColor(79, 70, 229);
+      doc.setFontSize(11);
+      const attemptRatio = (((correct + incorrect) / Math.max(1, totalQuestions)) * 100).toFixed(0);
+      doc.text(`${correct + incorrect} / ${totalQuestions} (${attemptRatio}%)`, 145, y + 13);
+
+      // Section breakdown Grid
+      y = 124;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text("SUBJECT-WISE PERFORMANCE MATRIX (+3 Correct / -1 Penalty / 0 Left)", 15, y);
+
+      y += 4;
+      // Drawing table
+      doc.setFillColor(30, 41, 59);
+      doc.rect(15, y, 180, 7, 'F');
+      
+      doc.setFontSize(8);
+      doc.setTextColor(255);
+      doc.setFont("helvetica", "bold");
+      doc.text("Subject Section", 18, y + 5);
+      doc.text("Total Qs", 58, y + 5);
+      doc.text("Correct (+3)", 78, y + 5);
+      doc.text("Incorrect (-1)", 100, y + 5);
+      doc.text("Left (0)", 125, y + 5);
+      doc.text("Sec Marks", 143, y + 5);
+      doc.text("Est. Time Taken", 161, y + 5);
+      doc.text("Accuracy", 184, y + 5);
+
+      const subjectsList = ['Biology', 'Chemistry', 'Physics'];
+      let rowY = y + 7;
+
+      const detailsList = cuetResult?.details || [];
+      const sectionStats = subjectsList.map((sub, sIdx) => {
+        const subQuestions = detailsList.filter((q: any) => q.subject?.toLowerCase() === sub.toLowerCase() || q.subject === sub);
+        const subCorrect = subQuestions.filter((q: any) => q.isCorrect).length;
+        const subIncorrect = subQuestions.filter((q: any) => q.selectedIdx !== -1 && !q.isCorrect).length;
+        const subLeft = subQuestions.filter((q: any) => q.selectedIdx === -1).length;
+        const subTotalIn = subQuestions.length || 20;
+        const subScoreVal = subCorrect * 3 - subIncorrect;
+        const subMaxVal = subTotalIn * 3;
+        const subAccuracyVal = (subCorrect + subIncorrect) > 0 ? ((subCorrect / (subCorrect + subIncorrect)) * 100).toFixed(1) + "%" : "0.0%";
         
-        doc.setTextColor(color[0], color[1], color[2]);
-        doc.setFont("helvetica", style);
-        const optLines = doc.splitTextToSize(`${prefix}${opt}`, pageWidth - 50);
-        doc.text(optLines, 25, y);
-        y += (optLines.length * 5);
+        // Estimated section time
+        const subAnswered = subCorrect + subIncorrect;
+        const overallAnswered = correct + incorrect || 1;
+        const subTimeSpentSec = Math.round((subAnswered / overallAnswered) * totalTimeSpentSec);
+        const subTimeStr = formatSecToMinSec(subTimeSpentSec);
+
+        return {
+          subject: sub,
+          total: subTotalIn,
+          correct: subCorrect,
+          incorrect: subIncorrect,
+          left: subLeft,
+          score: subScoreVal,
+          max: subMaxVal,
+          timeSpent: subTimeStr,
+          accuracy: subAccuracyVal,
+          correctRatio: subTotalIn > 0 ? subCorrect / subTotalIn : 0,
+          incorrectRatio: subTotalIn > 0 ? subIncorrect / subTotalIn : 0,
+          leftRatio: subTotalIn > 0 ? subLeft / subTotalIn : 0
+        };
       });
 
-      y += 2;
-      doc.setFont("helvetica", "bold");
-      if (item.selectedIdx === -1) {
-        doc.setTextColor(150, 150, 150);
-        doc.text("STATUS: UNATTEMPTED", 20, y);
-      } else if (item.isCorrect) {
-        doc.setTextColor(0, 153, 51);
-        doc.text(`STATUS: CORRECT (Selected: ${String.fromCharCode(65 + item.selectedIdx)})`, 20, y);
-      } else {
-        doc.setTextColor(204, 0, 0);
-        const correctLetter = item.correct !== undefined ? String.fromCharCode(65 + item.correct) : 'N/A';
-        doc.text(`STATUS: INCORRECT (Selected: ${String.fromCharCode(65 + item.selectedIdx)}, Correct: ${correctLetter})`, 20, y);
-      }
-      
-      doc.setTextColor(0);
-      y += 8;
-      doc.setDrawColor(240);
-      doc.line(20, y, pageWidth - 20, y);
-      y += 8;
-    });
+      sectionStats.forEach((stat, idx) => {
+        // Draw alternate rows colors
+        if (idx % 2 === 0) {
+          doc.setFillColor(248, 250, 252);
+        } else {
+          doc.setFillColor(239, 246, 255);
+        }
+        doc.rect(15, rowY, 180, 8, 'F');
 
-    doc.save(`${examType?.toUpperCase()}_Result_${currentUser?.name || "Candidate"}.pdf`);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        doc.setTextColor(15, 23, 42);
+        doc.text(stat.subject.toUpperCase(), 18, rowY + 5.5);
+
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(51, 65, 85);
+        doc.text(stat.total.toString(), 62, rowY + 5.5);
+        
+        doc.setTextColor(22, 101, 52); // green
+        doc.text(`+${stat.correct}`, 82, rowY + 5.5);
+        
+        doc.setTextColor(185, 28, 28); // red
+        doc.text(`-${stat.incorrect}`, 104, rowY + 5.5);
+        
+        doc.setTextColor(100, 116, 139); // gray
+        doc.text(stat.left.toString(), 129, rowY + 5.5);
+        
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(15, 23, 42);
+        doc.text(`${stat.score} / ${stat.max}`, 145, rowY + 5.5);
+        
+        doc.setFont("helvetica", "normal");
+        doc.text(stat.timeSpent, 163, rowY + 5.5);
+        doc.text(stat.accuracy, 186, rowY + 5.5);
+
+        rowY += 8;
+      });
+
+      // Overall Total row
+      doc.setFillColor(30, 41, 59);
+      doc.rect(15, rowY, 180, 8, 'F');
+      
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(255);
+      doc.text("TOTALS (Practice)", 18, rowY + 5.5);
+      doc.text(totalQuestions.toString(), 62, rowY + 5.5);
+      doc.text(correct.toString(), 82, rowY + 5.5);
+      doc.text(incorrect.toString(), 104, rowY + 5.5);
+      doc.text(left.toString(), 129, rowY + 5.5);
+      doc.text(`${score} / ${total}`, 145, rowY + 5.5);
+      doc.text(overallTimeSpentStr, 163, rowY + 5.5);
+      doc.text(`${overallAccuracy.toFixed(1)}%`, 186, rowY + 5.5);
+
+      // SECTION BAR CHART GRAPH
+      y = rowY + 13;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(15, 23, 42);
+      doc.text("GRAPHICAL SECTIONAL OUTCOME (Correct segment in Green, Incorrect in Red, Left in Gray)", 15, y);
+
+      // Stacked Bar Graph rendering
+      y += 4;
+      sectionStats.forEach((stat, idx) => {
+        const barX = 65;
+        const barY = y + (idx * 8.5);
+        const barW = 100;
+        const barH = 4.5;
+
+        doc.setFontSize(7.5);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(71, 85, 105);
+        doc.text(stat.subject.toUpperCase() + ":", 15, barY + 3.2);
+
+        // Draw segmented track
+        const correctW = stat.correctRatio * barW;
+        const incorrectW = stat.incorrectRatio * barW;
+        const leftW = stat.leftRatio * barW;
+
+        let currentW = barX;
+        // Green segment
+        if (correctW > 0) {
+          doc.setFillColor(34, 197, 94);
+          doc.rect(currentW, barY, correctW, barH, 'F');
+          currentW += correctW;
+        }
+        // Red segment
+        if (incorrectW > 0) {
+          doc.setFillColor(239, 68, 68);
+          doc.rect(currentW, barY, incorrectW, barH, 'F');
+          currentW += incorrectW;
+        }
+        // Gray segment
+        if (leftW > 0) {
+          doc.setFillColor(148, 163, 184);
+          doc.rect(currentW, barY, leftW, barH, 'F');
+        }
+
+        // Write mini stats labels
+        doc.setFontSize(6.5);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(30, 41, 59);
+        doc.text(`${stat.correct} [Correct] / ${stat.incorrect} [Incorrect] / ${stat.left} [Left]`, barX + barW + 2, barY + 3.2);
+      });
+
+      // NISER SELECTIVITY ESTIMATION GRAPH & SCALE
+      const niserInfo = getNestEstimation(score);
+      y = y + 31;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text("NISER SELECTION CHANCE & BENCHMARK GRAPH", 15, y);
+
+      y += 4;
+      doc.setDrawColor(226, 232, 240);
+      doc.setFillColor(250, 250, 250);
+      doc.rect(15, y, 180, 15, 'FD');
+
+      // Draw horizontal segmented spectrum gauge bar representing score zone
+      const gaugeX = 35;
+      const gaugeY = y + 4;
+      const gaugeSegW = 28;
+      const gaugeH = 4;
+
+      const segments = [
+        { label: "<65", color: [239, 68, 68] },
+        { label: "65-79", color: [249, 115, 22] },
+        { label: "80-94", color: [234, 179, 8] },
+        { label: "95-114", color: [132, 204, 22] },
+        { label: "115+", color: [34, 197, 94] }
+      ];
+
+      segments.forEach((seg, i) => {
+        const segX = gaugeX + (i * gaugeSegW);
+        doc.setFillColor(seg.color[0], seg.color[1], seg.color[2]);
+        doc.rect(segX, gaugeY, gaugeSegW, gaugeH, 'F');
+        doc.setFontSize(7);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(100);
+        doc.text(seg.label, segX + (gaugeSegW/2), gaugeY + 7.5, { align: 'center' });
+      });
+
+      // Calculate indicator arrow X coordinate
+      let arrowX = gaugeX + 5;
+      if (score < 65) {
+        arrowX = gaugeX + (Math.max(0, score) / 65) * gaugeSegW;
+      } else if (score < 80) {
+        arrowX = gaugeX + gaugeSegW + ((score - 65) / 15) * gaugeSegW;
+      } else if (score < 95) {
+        arrowX = gaugeX + (2 * gaugeSegW) + ((score - 80) / 15) * gaugeSegW;
+      } else if (score < 115) {
+        arrowX = gaugeX + (3 * gaugeSegW) + ((score - 95) / 20) * gaugeSegW;
+      } else {
+        arrowX = gaugeX + (4 * gaugeSegW) + Math.min(1, (score - 115) / 35) * gaugeSegW;
+      }
+
+      // Draw actual candidate score arrow
+      doc.setFillColor(15, 23, 42);
+      doc.triangle(arrowX, gaugeY - 2, arrowX - 1.5, gaugeY - 3.5, arrowX + 1.5, gaugeY - 3.5, 'F');
+      doc.setFontSize(7.5);
+      doc.setFont("helvetica", "bold");
+      doc.text(`YOUR SCORE: ${score}`, arrowX, gaugeY - 4.5, { align: 'center' });
+
+      // Suggestions and outcomes box
+      y = y + 18;
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(15, y, 180, 25, 3, 3, 'F');
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(71, 85, 105);
+      doc.text("ESTIMATED PERCENTILE RANGE:", 20, y + 5);
+      doc.setFontSize(10);
+      doc.setTextColor(34, 197, 94);
+      doc.text(niserInfo.percentile, 85, y + 5);
+
+      doc.setFontSize(8);
+      doc.setTextColor(71, 85, 105);
+      doc.text("NISER SELECTION CHANCE (GENERAL):", 20, y + 11);
+      doc.setFontSize(8.5);
+      doc.setTextColor(niserInfo.badgeColor[0], niserInfo.badgeColor[1], niserInfo.badgeColor[2]);
+      doc.text(niserInfo.chanceGen, 85, y + 11);
+
+      doc.setFontSize(8);
+      doc.setTextColor(71, 85, 105);
+      doc.text("NISER SELECTION CHANCE (EWS):", 20, y + 17);
+      doc.setFontSize(8.5);
+      doc.setTextColor(niserInfo.badgeColor[0], niserInfo.badgeColor[1], niserInfo.badgeColor[2]);
+      doc.text(niserInfo.chanceEws, 85, y + 17);
+
+      doc.setFontSize(8);
+      doc.setTextColor(71, 85, 105);
+      doc.text("SUGGESTIVE PREP RATING:", 20, y + 22);
+      doc.setFontSize(9);
+      doc.setTextColor(30, 41, 59);
+      doc.text(score >= 95 ? "Highly Receptive" : score >= 80 ? "Progressive Border" : "Needs Re-Evaluation", 85, y + 22);
+
+      // Suggestions text detail
+      y = y + 28;
+      doc.setTextColor(15, 23, 42);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.text("DIAGNOSTIC CRITIQUE & CORE SUGGESTIONS:", 15, y);
+
+      y += 4;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(51, 65, 85);
+      const suggestionsWords = doc.splitTextToSize(niserInfo.suggestion, 180);
+      doc.text(suggestionsWords, 15, y);
+
+      // Footer notice on first page
+      doc.setFontSize(6.5);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(148, 163, 184);
+      doc.text("OFFICIAL NISER SCREENING COMPLIANCE SCORECARD. REMAINING PAGES CONTAIN YOUR DETAILED CORRECTED EXAM PAPERS.", pageWidth / 2, pageHeight - 8, { align: 'center' });
+
+      // PAGE 2+: DETAILED A-Z REPORT
+      doc.addPage();
+      y = 20;
+
+      doc.setFontSize(13);
+      doc.setTextColor(30, 41, 59);
+      doc.setFont("helvetica", "bold");
+      doc.text("EXAMINATION QUESTION-BY-QUESTION REVIEWS (A-Z REPORT)", 15, y);
+      y += 8;
+
+      for (let index = 0; index < detailsList.length; index++) {
+        const item = detailsList[index];
+        if (y > pageHeight - 45) {
+          doc.addPage();
+          y = 20;
+        }
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.setTextColor(30, 41, 59);
+
+        const questionText = item.subject ? `[${statToCapital(item.subject)}] ${item.question}` : item.question;
+        const questionLines = doc.splitTextToSize(`Q${index + 1}. ${questionText}`, pageWidth - 35);
+        
+        doc.text(questionLines, 15, y);
+        y += (questionLines.length * 4.5) + 3;
+
+        // Render question graph/SVG inside details
+        if (item.diagramSvg) {
+          try {
+            const svgUrl = await svgToBase64Image(item.diagramSvg);
+            if (svgUrl && svgUrl.startsWith("data:image")) {
+              if (y > pageHeight - 75) {
+                doc.addPage();
+                y = 20;
+              }
+              doc.addImage(svgUrl, 'PNG', 20, y, 70, 35);
+              y += 38;
+            }
+          } catch (err) {
+            console.error("Failed adding math/science SVG to report PDF:", err);
+          }
+        }
+
+        // Draw selection options
+        item.options.forEach((opt: string, optIdx: number) => {
+          const prefix = String.fromCharCode(65 + optIdx) + ") ";
+          let color = [51, 65, 85];
+          let style = "normal";
+
+          if (optIdx === item.correct) {
+            color = [22, 101, 52];
+            style = "bold";
+          }
+
+          doc.setTextColor(color[0], color[1], color[2]);
+          doc.setFont("helvetica", style);
+          doc.setFontSize(8);
+          
+          const optionTextLines = doc.splitTextToSize(`${prefix}${opt}`, pageWidth - 45);
+          doc.text(optionTextLines, 20, y);
+          y += (optionTextLines.length * 4) + 1;
+        });
+
+        // Question Attempt Stats Footer banner
+        y += 2.5;
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7.5);
+        if (item.selectedIdx === -1) {
+          doc.setTextColor(148, 163, 184);
+          doc.text("Candidate Choice: UNATTEMPTED [Awarded: 0 marks]", 18, y);
+        } else if (item.isCorrect) {
+          doc.setTextColor(22, 101, 52);
+          doc.text(`Candidate Choice: ${String.fromCharCode(65 + item.selectedIdx)} (CORRECT) [Awarded: +3 marks]`, 18, y);
+        } else {
+          doc.setTextColor(185, 28, 28);
+          const correctLetter = String.fromCharCode(65 + item.correct);
+          doc.text(`Candidate Choice: ${String.fromCharCode(65 + item.selectedIdx)} (INCORRECT, Correct is: ${correctLetter}) [Penalty: -1 mark]`, 18, y);
+        }
+
+        y += 7.5;
+        doc.setDrawColor(241, 245, 249);
+        doc.line(15, y, pageWidth - 15, y);
+        y += 7.5;
+      }
+    } else {
+      // STANDARD PDF IN ALL OTHER CASES (NEET / CUET / etc.)
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      let y = 20;
+
+      // Header
+      doc.setFontSize(22);
+      doc.setTextColor(0, 51, 153);
+      doc.text(`${examType === 'neet' ? 'NEET UG' : 'CUET'} 2026 PRACTICE PORTAL`, pageWidth / 2, y, { align: 'center' });
+      y += 10;
+      doc.setFontSize(14);
+      doc.setTextColor(100);
+      doc.text("EXAMINATION PERFORMANCE REPORT", pageWidth / 2, y, { align: 'center' });
+      y += 15;
+
+      // Candidate Info
+      doc.setDrawColor(200);
+      doc.line(15, y, pageWidth - 15, y);
+      y += 10;
+      doc.setFontSize(10);
+      doc.setTextColor(0);
+      doc.setFont("helvetica", "bold");
+      doc.text(`Candidate Name: ${currentUser?.name || nestCandidateName || "PALLAVI"}`, 20, y);
+      doc.text(`Exam ID: ${examType === 'neet' ? 'NEET' : 'CUET'}2026-X7Y`, 150, y);
+      y += 10;
+      doc.text(`Total Score: ${cuetResult?.score} / ${cuetResult?.total}`, 20, y);
+      doc.text(`Date: ${new Date().toLocaleDateString()}`, 150, y);
+      y += 10;
+      doc.line(15, y, pageWidth - 15, y);
+      y += 15;
+
+      // Results Summary
+      doc.setFontSize(12);
+      doc.text("SUMMARY STATISTICS", 20, y);
+      y += 10;
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.text(`- Correct Answers: ${cuetResult?.correct}`, 25, y);
+      y += 7;
+      doc.text(`- Incorrect Answers: ${cuetResult?.incorrect}`, 25, y);
+      y += 7;
+      doc.text(`- Unattempted: ${cuetResult?.unattempted}`, 25, y);
+      y += 15;
+
+      // Detailed Report Title
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.text("QUESTION-BY-QUESTION ANALYSIS (A-Z REPORT)", 20, y);
+      y += 10;
+
+      // Questions
+      doc.setFontSize(9);
+      for (let index = 0; index < (cuetResult?.details || []).length; index++) {
+        const item = (cuetResult?.details || [])[index];
+        if (y > 270) {
+          doc.addPage();
+          y = 20;
+        }
+
+        doc.setFont("helvetica", "bold");
+        const questionText = item.subject ? `[${statToCapital(item.subject)}] ${item.question}` : item.question;
+        const questionLines = doc.splitTextToSize(`${index + 1}. ${questionText}`, pageWidth - 40);
+        doc.text(questionLines, 20, y);
+        y += (questionLines.length * 5) + 2;
+
+        // Render question graph/SVG inside standard details
+        if (item.diagramSvg) {
+          try {
+            const svgUrl = await svgToBase64Image(item.diagramSvg);
+            if (svgUrl && svgUrl.startsWith("data:image")) {
+              if (y > 270 - 45) {
+                doc.addPage();
+                y = 20;
+              }
+              doc.addImage(svgUrl, 'PNG', 25, y, 70, 35);
+              y += 38;
+            }
+          } catch (err) {
+            console.error(err);
+          }
+        }
+
+        item.options.forEach((opt: string, optIdx: number) => {
+          const prefix = String.fromCharCode(65 + optIdx) + ") ";
+          let color = [0, 0, 0];
+          let style = "normal";
+
+          if (optIdx === item.correct) {
+            color = [0, 153, 51]; // Green for correct
+            style = "bold";
+          }
+          
+          doc.setTextColor(color[0], color[1], color[2]);
+          doc.setFont("helvetica", style);
+          const optLines = doc.splitTextToSize(`${prefix}${opt}`, pageWidth - 50);
+          doc.text(optLines, 25, y);
+          y += (optLines.length * 5);
+        });
+
+        y += 2;
+        doc.setFont("helvetica", "bold");
+        if (item.selectedIdx === -1) {
+          doc.setTextColor(150, 150, 150);
+          doc.text("STATUS: UNATTEMPTED", 20, y);
+        } else if (item.isCorrect) {
+          doc.setTextColor(0, 153, 51);
+          doc.text(`STATUS: CORRECT (Selected: ${String.fromCharCode(65 + item.selectedIdx)})`, 20, y);
+        } else {
+          doc.setTextColor(204, 0, 0);
+          const correctLetter = item.correct !== undefined ? String.fromCharCode(65 + item.correct) : 'N/A';
+          doc.text(`STATUS: INCORRECT (Selected: ${String.fromCharCode(65 + item.selectedIdx)}, Correct: ${correctLetter})`, 20, y);
+        }
+        
+        doc.setTextColor(0);
+        y += 8;
+        doc.setDrawColor(240);
+        doc.line(20, y, pageWidth - 20, y);
+        y += 8;
+      }
+    }
+
+    doc.save(`${examType?.toUpperCase()}_Result_${currentUser?.name || nestCandidateName || "Candidate"}.pdf`);
   };
 
   const handleAction = (action: 'save' | 'mark' | 'clear' | 'save-mark') => {
@@ -4075,7 +5020,7 @@ const CUETExamView = ({
                         >
                           {String.fromCharCode(65 + i)}
                         </button>
-                        <span style={{ fontSize: `${0.875 * (nestTextZoom / 100)}rem` }} className={`font-bold transition-colors ${isSelected ? 'text-slate-900' : 'text-slate-650'}`}>{opt}</span>
+                        <span style={{ fontSize: `${0.875 * (nestTextZoom / 100)}rem` }} className={`font-bold transition-colors ${isSelected ? 'text-black font-extrabold' : 'text-neutral-950'}`}>{opt}</span>
                       </div>
                     );
                   })}
@@ -4656,6 +5601,81 @@ const CUETExamView = ({
                              <p className="text-2xl font-black text-slate-700">{cuetResult?.unattempted}</p>
                         </div>
                     </div>
+                </div>
+                <div className="bg-slate-50 border border-slate-200/60 p-6 rounded-[32px] text-left space-y-4 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-indigo-100 rounded-2xl flex items-center justify-center">
+                      <Mail className="w-5 h-5 text-indigo-600" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight">Auto-Email Report Integration</h4>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Configured by Shubhjeet Ram Tripathi</p>
+                    </div>
+                  </div>
+
+                  {emailSentStatus === 'success' && (
+                    <div className="bg-green-50 border border-green-200 p-4 rounded-2xl space-y-1">
+                      <p className="text-xs font-bold text-green-800 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
+                        Report successfully emailed!
+                      </p>
+                      <p className="text-[11px] text-green-700 leading-relaxed">
+                        A fully detailed A-Z assessment scorecard & candidate introduction has been automatically emailed to <strong>jitendrakumart557@gmail.com</strong> and <strong>pt617339@gmail.com</strong> via Gmail secure API.
+                      </p>
+                    </div>
+                  )}
+
+                  {emailSentStatus === 'sending' && (
+                    <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-2xl flex items-center gap-3">
+                      <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin shrink-0" />
+                      <p className="text-xs font-bold text-indigo-800">
+                        Dispatching detailed report automatically via Gmail API...
+                      </p>
+                    </div>
+                  )}
+
+                  {emailSentStatus === 'failure' && (
+                    <div className="bg-red-50 border border-red-200 p-4 rounded-2xl space-y-2">
+                      <p className="text-xs font-bold text-red-800 flex items-center gap-1.5">
+                        <AlertTriangle className="w-4 h-4 text-red-600" />
+                        Automated Delivery Failed
+                      </p>
+                      <p className="text-[11px] text-red-700 leading-relaxed">
+                        {emailErrorMsg || 'An error occurred during secure Gmail submission dispatch.'}
+                      </p>
+                      {gmailToken && (
+                        <button 
+                          onClick={() => sendResultEmail(gmailToken, cuetResult)}
+                          className="text-[10px] font-black uppercase bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl transition-all font-bold cursor-pointer"
+                        >
+                          Retry Dispatch
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {emailSentStatus === 'idle' && !gmailToken && (
+                    <div className="bg-slate-100 border border-slate-200/60 p-4 rounded-2xl">
+                      <p className="text-xs font-semibold text-slate-600 leading-relaxed">
+                        ⚠️ Automatic email dispatch was skipped because Google account authorization was not completed at portal startup.
+                      </p>
+                    </div>
+                  )}
+                  
+                  {emailSentStatus === 'idle' && gmailToken && (
+                    <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <p className="text-xs font-bold text-indigo-900">Google Account Connected</p>
+                        <p className="text-[10px] text-indigo-700">{gmailUserEmail || 'Ready to transmit'}</p>
+                      </div>
+                      <button 
+                        onClick={() => sendResultEmail(gmailToken, cuetResult)}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[10px] uppercase px-4 py-2 rounded-xl transition-all cursor-pointer font-bold"
+                      >
+                        Send Report Now
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex gap-4">
