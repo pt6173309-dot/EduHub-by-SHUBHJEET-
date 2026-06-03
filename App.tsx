@@ -1352,14 +1352,17 @@ const AppContent: React.FC = () => {
       const prompt = `You are an AI that extracts exam questions specifically for the NEST Exam (National Entrance Screening Test).
       Extract all multiple choice questions for the section ${subject} from the following text. 
       Format each question as an object with:
-      1. question: the full text of the question
-      2. options: an array of EXACTLY 4 strings
-      3. correct: the index (0-3) of the correct answer (if marked, or deduce if possible. If you can't deduce the correct answer, pick index 0 as default)
+      1. question: the full text of the question. Keep it exactly literal to the source text with NO custom changes, rewrites, or omissions to prevent mistakes.
+      2. options: an array of EXACTLY 4 strings.
+         CRITICAL: You MUST sanitize every option string by completely removing any correct-answer indicators, asterisks (*), bold formatting markdown (like **option** or *option*), ticks, checkmarks, arrows, or trailing suffixes like "(correct)", "(ans)", "(Answer)", "Ans:", "Answer is Option", etc. All 4 options MUST look completely identical, standard, and uniform in formatting so that there is absolutely NO textual clue or bolding pointing to the correct choice.
+      3. diagramSvg: A string containing beautifully structured standard inline vector <svg> code representing any diagram, graph, drawing, coordinates, pulleys on incline slope, physics circuit diagram, or chemical compound mentioned or present in the question. Include coordinate axes with clear labels, visual nodes, vectors, arrows, and elegant styling. Note: Background should be transparent or white, stroke colors MUST use dark grays (#333333, #475569) so they are outstanding. Width of this <svg> should be 100% and height should be around 150-250px. If no diagram/graph is needed or present for the question, set this field to null or "".
+      4. diagramTitle: A short string title of the diagram (e.g., "Pulley Incline Slope Diagram", "Resistor Parallel Circuit") if diagramSvg is present, otherwise null or "".
+      5. correct: the index (0-3) of the correct answer (if marked, or deduce if possible. If you can't deduce the correct answer, pick index 0 as default)
       
       Text to process:
       ${pastedText}
       
-      Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "correct": 0}]. If none found, return [].`;
+      Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
 
       const response = await ai.models.generateContent({
         model: "gemini-3.5-flash",
@@ -1382,6 +1385,64 @@ const AppContent: React.FC = () => {
       }
     } catch (error: any) {
       console.error('NEST Extraction Error:', error);
+      alert('Failed: ' + error.message);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const handleNestFileUpload = async (subject: string, file: File) => {
+    const apiKey = process.env.GEMINI_API_KEY || (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY);
+    if (!apiKey) { alert("AI Service is currently unavailable. Please ensure GEMINI_API_KEY is set."); return; }
+
+    setIsAiLoading(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const fileToGenerativePart = async (f: File) => {
+        const base64EncodedDataPromise = new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+          reader.readAsDataURL(f);
+        });
+        return {
+          inlineData: { data: await base64EncodedDataPromise as string, mimeType: f.type },
+        };
+      };
+
+      const fileData = await fileToGenerativePart(file);
+      const prompt = `You are an AI that extracts exam questions specifically for the NEST Exam (National Entrance Screening Test).
+      Extract all multiple choice questions for the section ${subject} from this NEST question paper file (image or PDF). 
+      Format each question as an object with:
+      1. question: the full text of the question. Keep it exactly literal to the source text with NO custom changes, rewrites, or omissions to prevent mistakes.
+      2. options: an array of EXACTLY 4 strings.
+         CRITICAL: You MUST sanitize every option string by completely removing any correct-answer indicators, asterisks (*), bold formatting markdown (like **option** or *option*), ticks, checkmarks, arrows, or trailing suffixes like "(correct)", "(ans)", "(Answer)", "Ans:", "Answer is Option", etc. All 4 options MUST look completely identical, standard, and uniform in formatting so that there is absolutely NO textual clue or bolding pointing to the correct choice.
+      3. diagramSvg: A string containing beautifully structured standard inline vector <svg> code representing any diagram, graph, drawing, coordinates, pulleys on incline slope, physics circuit diagram, or chemical compound mentioned or present in the question. Include coordinate axes with clear labels, visual nodes, vectors, arrows, and elegant styling. Note: Background should be transparent or white, stroke colors MUST use dark grays (#333333, #475569) so they are outstanding. Width of this <svg> should be 100% and height should be around 150-250px. If no diagram/graph is needed or present for the question, set this field to null or "".
+      4. diagramTitle: A short string title of the diagram (e.g., "Pulley Incline Slope Diagram", "Resistor Parallel Circuit") if diagramSvg is present, otherwise null or "".
+      5. correct: the index (0-3) of the correct answer (if marked, or deduce if possible. If you can't deduce the correct answer, pick index 0 as default)
+      
+      Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: [{ parts: [{ text: prompt }, fileData] }],
+      });
+      const text = response.text;
+      const jsonMatch = text ? text.match(/\[[\s\S]*\]/) : null;
+      if (jsonMatch) {
+         const extracted = JSON.parse(jsonMatch[0]);
+         if (extracted.length > 0) {
+           // NEST Exam structure has exactly 20 questions per section. Limit to 20.
+           const slicedExtracted = extracted.slice(0, 20);
+           setNestData(prev => ({ ...prev, [subject]: slicedExtracted }));
+           alert(`${slicedExtracted.length} questions extracted for NEST ${subject}.`);
+         } else {
+           alert(`No questions found for ${subject}.`);
+         }
+      } else {
+        alert("Found issue parsing AI response. Please try again.");
+      }
+    } catch (error: any) {
+      console.error('NEST File Extraction Error:', error);
       alert('Failed: ' + error.message);
     } finally {
       setIsAiLoading(false);
@@ -1435,14 +1496,17 @@ const AppContent: React.FC = () => {
       const ai = new GoogleGenAI({ apiKey });
       const prompt = `Extract all multiple choice questions for ${subject} from the following text. 
       Format each question as an object with:
-      1. question: the full text of the question
-      2. options: an array of EXACTLY 4 strings
-      3. correct: the index (0-3) of the correct answer (if marked)
+      1. question: the full text of the question. Keep it exactly literal to the source text with NO custom changes, rewrites, or omissions to prevent mistakes.
+      2. options: an array of EXACTLY 4 strings.
+         CRITICAL: You MUST sanitize every option string by completely removing any correct-answer indicators, asterisks (*), bold formatting markdown (like **option** or *option*), ticks, checkmarks, arrows, or trailing suffixes like "(correct)", "(ans)", "(Answer)", "Ans:", "Answer is Option", etc. All 4 options MUST look completely identical, standard, and uniform in formatting so that there is absolutely NO textual clue or bolding pointing to the correct choice.
+      3. diagramSvg: A string containing beautifully structured standard inline vector <svg> code representing any diagram, graph, drawing, coordinates, pulleys on incline slope, physics circuit diagram, or chemical compound mentioned or present in the question. Include coordinate axes with clear labels, visual nodes, vectors, arrows, and elegant styling. Note: Background should be transparent or white, stroke colors MUST use dark grays (#333333, #475569) so they are outstanding. Width of this <svg> should be 100% and height should be around 150-250px. If no diagram/graph is needed or present for the question, set this field to null or "".
+      4. diagramTitle: A short string title of the diagram (e.g., "Coordinate Plot", "Chemical Structure Benzene Ring") if diagramSvg is present, otherwise null or "".
+      5. correct: the index (0-3) of the correct answer (if marked)
       
       Text to process:
       ${pastedText}
       
-      Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "correct": 0}]. If none found, return [].`;
+      Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
 
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
@@ -1461,6 +1525,61 @@ const AppContent: React.FC = () => {
       }
     } catch (error: any) {
       console.error('NEET Extraction Error:', error);
+      alert('Failed: ' + error.message);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const handleNeetFileUpload = async (subject: string, file: File) => {
+    const apiKey = process.env.GEMINI_API_KEY || (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY);
+    if (!apiKey) { alert("AI Service is currently unavailable. Please ensure GEMINI_API_KEY is set."); return; }
+
+    setIsAiLoading(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const fileToGenerativePart = async (f: File) => {
+        const base64EncodedDataPromise = new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+          reader.readAsDataURL(f);
+        });
+        return {
+          inlineData: { data: await base64EncodedDataPromise as string, mimeType: f.type },
+        };
+      };
+
+      const fileData = await fileToGenerativePart(file);
+      const prompt = `Extract all multiple choice questions for ${subject} from this NEET question paper file (image or PDF). 
+      Format each question as an object with:
+      1. question: the full text of the question. Keep it exactly literal to the source text with NO custom changes, rewrites, or omissions to prevent mistakes.
+      2. options: an array of EXACTLY 4 strings.
+         CRITICAL: You MUST sanitize every option string by completely removing any correct-answer indicators, asterisks (*), bold formatting markdown (like **option** or *option*), ticks, checkmarks, arrows, or trailing suffixes like "(correct)", "(ans)", "(Answer)", "Ans:", "Answer is Option", etc. All 4 options MUST look completely identical, standard, and uniform in formatting so that there is absolutely NO textual clue or bolding pointing to the correct choice.
+      3. diagramSvg: A string containing beautifully structured standard inline vector <svg> code representing any diagram, graph, drawing, coordinates, pulleys on incline slope, physics circuit diagram, or chemical compound mentioned or present in the question. Include coordinate axes with clear labels, visual nodes, vectors, arrows, and elegant styling. Note: Background should be transparent or white, stroke colors MUST use dark grays (#333333, #475569) so they are outstanding. Width of this <svg> should be 100% and height should be around 150-250px. If no diagram/graph is needed or present for the question, set this field to null or "".
+      4. diagramTitle: A short string title of the diagram (e.g., "Coordinate Plot", "Chemical Structure Benzene Ring") if diagramSvg is present, otherwise null or "".
+      5. correct: the index (0-3) of the correct answer (if marked)
+      
+      Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: [{ parts: [{ text: prompt }, fileData] }],
+      });
+      const text = response.text;
+      const jsonMatch = text ? text.match(/\[[\s\S]*\]/) : null;
+      if (jsonMatch) {
+         const extracted = JSON.parse(jsonMatch[0]);
+         if (extracted.length > 0) {
+           setNeetData(prev => ({ ...prev, [subject]: extracted }));
+           alert(`${extracted.length} questions extracted for ${subject}.`);
+         } else {
+           alert(`No questions found for ${subject}.`);
+         }
+      } else {
+        alert("Found issue parsing AI response. Please try again.");
+      }
+    } catch (error: any) {
+      console.error('NEET File Extraction Error:', error);
       alert('Failed: ' + error.message);
     } finally {
       setIsAiLoading(false);
@@ -1506,14 +1625,17 @@ const AppContent: React.FC = () => {
       const prompt = `Extract all multiple choice questions from the following text. 
       The text may contain up to 50 or more questions. Ensure you find ALL of them.
       Format each question as an object with:
-      1. question: the full text of the question
-      2. options: an array of EXACTLY 4 strings (fill with placeholders if fewer than 4 are found)
-      3. correct: the index (0-3) of the correct answer based on the content (if marked with * or "(correct)")
+      1. question: the full text of the question. Keep it exactly literal to the source text with NO custom changes, rewrites, or omissions to prevent mistakes.
+      2. options: an array of EXACTLY 4 strings (fill with placeholders if fewer than 4 are found).
+         CRITICAL: You MUST sanitize every option string by completely removing any correct-answer indicators, asterisks (*), bold formatting markdown (like **option** or *option*), ticks, checkmarks, arrows, or trailing suffixes like "(correct)", "(ans)", "(Answer)", "Ans:", "Answer is Option", etc. All 4 options MUST look completely identical, standard, and uniform in formatting so that there is absolutely NO textual clue or bolding pointing to the correct choice.
+      3. diagramSvg: A string containing beautifully structured standard inline vector <svg> code representing any diagram, graph, drawing, coordinates, pulleys on incline slope, physics circuit diagram, or chemical compound mentioned or present in the question. Include coordinate axes with clear labels, visual nodes, vectors, arrows, and elegant styling. Note: Background should be transparent or white, stroke colors MUST use dark grays (#333333, #475569) so they are outstanding. Width of this <svg> should be 100% and height should be around 150-250px. If no diagram/graph is needed or present for the question, set this field to null or "".
+      4. diagramTitle: A short string title of the diagram (e.g., "Math Function Plot", "Force Vector Diagram") if diagramSvg is present, otherwise null or "".
+      5. correct: the index (0-3) of the correct answer based on the content (if marked with * or "(correct)")
       
       Text to process:
       ${pastedText}
       
-      Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "correct": 0}]. If no questions are found, return [].`;
+      Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If no questions are found, return [].`;
 
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
@@ -1573,16 +1695,19 @@ const AppContent: React.FC = () => {
       };
 
       const imageData = await fileToGenerativePart(file);
-      const prompt = `Extract all questions from this CUET question paper image. 
+      const prompt = `Extract all questions from this CUET question paper file (image or PDF). 
       Format each question as an object with:
-      1. question: the text of the question
-      2. options: an array of 4 strings
-      3. correct: the index (0-3) of the correct answer
+      1. question: the text of the question. Keep it exactly literal to the source text with NO custom changes, rewrites, or omissions to prevent mistakes.
+      2. options: an array of 4 strings.
+         CRITICAL: You MUST sanitize every option string by completely removing any correct-answer indicators, asterisks (*), bold formatting markdown (like **option** or *option*), ticks, checkmarks, arrows, or trailing suffixes like "(correct)", "(ans)", "(Answer)", "Ans:", "Answer is Option", etc. All 4 options MUST look completely identical, standard, and uniform in style so that there is absolutely NO clue, asterisk, or bolding pointing to the correct choice.
+      3. diagramSvg: A string containing beautifully structured standard inline vector <svg> code representing any diagram, graph, drawing, coordinates, pulleys on incline slope, physics circuit diagram, or chemical compound mentioned or present in this question. Include coordinate axes with clear labels, visual nodes, vectors, arrows, and elegant styling. Note: Background should be transparent or white, stroke colors MUST use dark grays (#333333, #475569) so they are outstanding. Width of this <svg> should be 100% and height should be around 150-250px. If no diagram/graph is needed or present for the question, set this field to null or "".
+      4. diagramTitle: A short string title of the diagram (e.g., "Pulley Incline Slope Diagram", "Resistor Parallel Circuit") if diagramSvg is present, otherwise null or "".
+      5. correct: the index (0-3) of the correct answer
       
-      Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "correct": 0}]`;
+      Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3.5-flash",
         contents: [{ parts: [{ text: prompt }, imageData] }],
       });
       const text = response.text;
@@ -1640,6 +1765,7 @@ const AppContent: React.FC = () => {
           handleCuetImageUpload={handleCuetImageUpload}
           handleCuetTextUpload={handleCuetTextUpload}
           handleNeetTextUpload={handleNeetTextUpload}
+          handleNeetFileUpload={handleNeetFileUpload}
           neetData={neetData}
           startNeetSimulation={startNeetSimulation}
           activeNeetSubject={activeNeetSubject}
@@ -1651,6 +1777,7 @@ const AppContent: React.FC = () => {
           setNeetOmrFilled={setNeetOmrFilled}
           nestData={nestData}
           handleNestTextUpload={handleNestTextUpload}
+          handleNestFileUpload={handleNestFileUpload}
           startNestSimulation={startNestSimulation}
         />
       </div>
@@ -1669,11 +1796,11 @@ const CUETExamView = ({
   currentUser, examType, setExamType, cuetStatus, setCuetStatus, cuetQuestions, setCuetQuestions,
   cuetAnswers, setCuetAnswers, cuetTimeLeft, setCuetTimeLeft,
   cuetIsLocked, setCuetIsLocked, cuetResult, setCuetResult,
-  handleCuetImageUpload, handleCuetTextUpload, handleNeetTextUpload,
+  handleCuetImageUpload, handleCuetTextUpload, handleNeetTextUpload, handleNeetFileUpload,
   neetData, startNeetSimulation, activeNeetSubject, setActiveNeetSubject,
   isAiLoading, cuetStatusMap, setCuetStatusMap,
   neetOmrFilled, setNeetOmrFilled,
-  nestData, handleNestTextUpload, startNestSimulation
+  nestData, handleNestTextUpload, handleNestFileUpload, startNestSimulation
 }: any) => {
   const [activeQuestion, setActiveQuestion] = useState(0);
   const [unlockCode, setUnlockCode] = useState('');
@@ -1685,6 +1812,25 @@ const CUETExamView = ({
     'Biology': '', 'Chemistry': '', 'Physics': ''
   });
   const [omrError, setOmrError] = useState<string | null>(null);
+
+  // Custom PDF/Image Upload tabs for CUET Simulator input
+  const [uploadMethod, setUploadMethod] = useState<'text' | 'file'>('text');
+  const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  // For NEET/NEST multi-subject tabs
+  const [neetUploadMethods, setNeetUploadMethods] = useState<Record<string, 'text' | 'file'>>({
+    'Physics': 'text', 'Chemistry': 'text', 'Biology': 'text'
+  });
+  const [nestUploadMethods, setNestUploadMethods] = useState<Record<string, 'text' | 'file'>>({
+    'Biology': 'text', 'Chemistry': 'text', 'Physics': 'text'
+  });
+  const [neetFiles, setNeetFiles] = useState<Record<string, File | null>>({
+    'Physics': null, 'Chemistry': null, 'Biology': null
+  });
+  const [nestFiles, setNestFiles] = useState<Record<string, File | null>>({
+    'Biology': null, 'Chemistry': null, 'Physics': null
+  });
 
   // NEST specific states
   const [nestCandidateName, setNestCandidateName] = useState('John Smith');
@@ -2697,36 +2843,109 @@ const CUETExamView = ({
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {['Biology', 'Chemistry', 'Physics'].map(sub => (
-              <div key={sub} className="bg-white p-6 rounded-3xl border border-slate-200 space-y-4 shadow-xl flex flex-col justify-between">
-                <div className="space-y-3">
-                  <h3 className="font-orbitron font-black text-sm text-slate-800 uppercase tracking-widest">{sub} SECTION</h3>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-normal">
-                    Upload or paste your question text here
-                  </label>
-                  <textarea 
-                    value={nestPastedTexts[sub]}
-                    onChange={(e) => setNestPastedTexts({...nestPastedTexts, [sub]: e.target.value})}
-                    placeholder="Upload or paste your question text here"
-                    className="w-full h-48 p-4 bg-slate-50 border rounded-2xl text-xs font-mono outline-none focus:border-emerald-500 transition-all leading-relaxed"
-                  />
-                </div>
-                <div className="space-y-3 mt-4">
-                  <button 
-                    onClick={() => handleNestTextUpload(sub, nestPastedTexts[sub])}
-                    disabled={isAiLoading || !nestPastedTexts[sub].trim()}
-                    className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50 transition-colors"
-                  >
-                    {isAiLoading ? 'Analyzing...' : `Extract ${sub}`}
-                  </button>
-                  <div className="text-center">
-                    <p className="text-[10px] font-bold text-slate-400">
-                      {nestData[sub]?.length || 0} / 20 Questions Ready
-                    </p>
+            {['Biology', 'Chemistry', 'Physics'].map(sub => {
+              const method = nestUploadMethods[sub] || 'text';
+              const file = nestFiles[sub];
+              return (
+                <div key={sub} className="bg-white p-6 rounded-3xl border border-slate-200 space-y-4 shadow-xl flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <h3 className="font-orbitron font-black text-sm text-slate-800 uppercase tracking-widest">{sub} SECTION</h3>
+                    
+                    {/* Tab selection */}
+                    <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200/50">
+                      <button
+                        onClick={() => setNestUploadMethods({...nestUploadMethods, [sub]: 'text'})}
+                        className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded-lg transition-all ${
+                          method === 'text' 
+                            ? 'bg-emerald-600 text-white shadow-xs' 
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        Paste Text
+                      </button>
+                      <button
+                        onClick={() => setNestUploadMethods({...nestUploadMethods, [sub]: 'file'})}
+                        className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded-lg transition-all ${
+                          method === 'file' 
+                            ? 'bg-emerald-600 text-white shadow-xs' 
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        Upload File
+                      </button>
+                    </div>
+
+                    {method === 'text' ? (
+                      <textarea 
+                        value={nestPastedTexts[sub] || ''}
+                        onChange={(e) => setNestPastedTexts({...nestPastedTexts, [sub]: e.target.value})}
+                        placeholder="Paste your question text block here..."
+                        className="w-full h-40 p-3 bg-slate-50 border rounded-2xl text-xs font-mono outline-none focus:border-emerald-500 transition-all leading-relaxed resize-none"
+                      />
+                    ) : (
+                      <div 
+                        onClick={() => document.getElementById(`nest-file-${sub}`)?.click()}
+                        className={`border-2 border-dashed rounded-2xl p-4 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[160px] ${
+                          file 
+                            ? 'border-emerald-500 bg-emerald-50/10' 
+                            : 'border-slate-200 bg-slate-50 hover:bg-slate-100/50 hover:border-slate-400'
+                        }`}
+                      >
+                        <input 
+                          id={`nest-file-${sub}`}
+                          type="file" 
+                          accept="application/pdf,image/*"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) setNestFiles({...nestFiles, [sub]: f});
+                          }}
+                          className="hidden" 
+                        />
+                        {file ? (
+                          <div className="space-y-1">
+                            <FileText className="w-6 h-6 text-emerald-500 mx-auto" />
+                            <p className="text-[10px] font-black text-slate-800 truncate max-w-[140px] mx-auto">{file.name}</p>
+                            <p className="text-[8px] text-slate-400 font-bold uppercase">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
+                            <span className="inline-block text-[7px] bg-slate-100 text-slate-600 font-bold px-1.5 py-0.5 rounded-md uppercase">Click to replace</span>
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <FileText className="w-6 h-6 text-slate-400 mx-auto" />
+                            <p className="text-[10px] font-bold text-slate-700">Choose PDF or Image</p>
+                            <p className="text-[8px] text-slate-400">Click or Drag & Drop</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-3 mt-4">
+                    <button 
+                      onClick={() => {
+                        if (method === 'text') {
+                          handleNestTextUpload(sub, nestPastedTexts[sub]);
+                        } else {
+                          if (file) {
+                            handleNestFileUpload(sub, file);
+                          } else {
+                            alert('Please select a PDF or Image file first.');
+                          }
+                        }
+                      }}
+                      disabled={isAiLoading || (method === 'text' ? !nestPastedTexts[sub]?.trim() : !file)}
+                      className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                    >
+                      {isAiLoading ? 'Analyzing...' : `Extract ${sub}`}
+                    </button>
+                    <div className="text-center">
+                      <p className="text-[10px] font-bold text-slate-400">
+                        {nestData[sub]?.length || 0} / 20 Questions Ready
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200">
@@ -2775,29 +2994,109 @@ const CUETExamView = ({
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {['Physics', 'Chemistry', 'Biology'].map(sub => (
-              <div key={sub} className="bg-white p-6 rounded-3xl border border-slate-200 space-y-4 shadow-xl">
-                <h3 className="font-orbitron font-black text-sm text-slate-800 uppercase tracking-widest">{sub}</h3>
-                <textarea 
-                  value={neetPastedTexts[sub]}
-                  onChange={(e) => setNeetPastedTexts({...neetPastedTexts, [sub]: e.target.value})}
-                  placeholder={`Paste ${sub} questions here...`}
-                  className="w-full h-48 p-4 bg-slate-50 border rounded-2xl text-xs font-mono"
-                />
-                <button 
-                  onClick={() => handleNeetTextUpload(sub, neetPastedTexts[sub])}
-                  disabled={isAiLoading || !neetPastedTexts[sub].trim()}
-                  className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-black disabled:opacity-50"
-                >
-                  {isAiLoading ? 'Analyzing...' : `Extract ${sub}`}
-                </button>
-                <div className="text-center">
-                  <p className="text-[10px] font-bold text-slate-400">
-                    {neetData[sub]?.length || 0} Questions Ready
-                  </p>
+            {['Physics', 'Chemistry', 'Biology'].map(sub => {
+              const method = neetUploadMethods[sub] || 'text';
+              const file = neetFiles[sub];
+              return (
+                <div key={sub} className="bg-white p-6 rounded-3xl border border-slate-200 space-y-4 shadow-xl flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <h3 className="font-orbitron font-black text-sm text-slate-800 uppercase tracking-widest">{sub}</h3>
+                    
+                    {/* Tab selection */}
+                    <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200/50">
+                      <button
+                        onClick={() => setNeetUploadMethods({...neetUploadMethods, [sub]: 'text'})}
+                        className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded-lg transition-all ${
+                          method === 'text' 
+                            ? 'bg-slate-900 text-white shadow-xs' 
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        Paste Text
+                      </button>
+                      <button
+                        onClick={() => setNeetUploadMethods({...neetUploadMethods, [sub]: 'file'})}
+                        className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded-lg transition-all ${
+                          method === 'file' 
+                            ? 'bg-slate-900 text-white shadow-xs' 
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        Upload File
+                      </button>
+                    </div>
+
+                    {method === 'text' ? (
+                      <textarea 
+                        value={neetPastedTexts[sub] || ''}
+                        onChange={(e) => setNeetPastedTexts({...neetPastedTexts, [sub]: e.target.value})}
+                        placeholder={`Paste ${sub} questions here...`}
+                        className="w-full h-40 p-3 bg-slate-50 border rounded-2xl text-xs font-mono outline-none focus:border-slate-500 transition-all leading-relaxed resize-none"
+                      />
+                    ) : (
+                      <div 
+                        onClick={() => document.getElementById(`neet-file-${sub}`)?.click()}
+                        className={`border-2 border-dashed rounded-2xl p-4 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[160px] ${
+                          file 
+                            ? 'border-emerald-500 bg-emerald-50/10' 
+                            : 'border-slate-200 bg-slate-50 hover:bg-slate-100/50 hover:border-slate-400'
+                        }`}
+                      >
+                        <input 
+                          id={`neet-file-${sub}`}
+                          type="file" 
+                          accept="application/pdf,image/*"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) setNeetFiles({...neetFiles, [sub]: f});
+                          }}
+                          className="hidden" 
+                        />
+                        {file ? (
+                          <div className="space-y-1">
+                            <FileText className="w-6 h-6 text-emerald-500 mx-auto" />
+                            <p className="text-[10px] font-black text-slate-800 truncate max-w-[140px] mx-auto">{file.name}</p>
+                            <p className="text-[8px] text-slate-400 font-bold uppercase">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
+                            <span className="inline-block text-[7px] bg-slate-100 text-slate-600 font-bold px-1.5 py-0.5 rounded-md uppercase">Click to replace</span>
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <FileText className="w-6 h-6 text-slate-400 mx-auto" />
+                            <p className="text-[10px] font-bold text-slate-700">Choose PDF or Image</p>
+                            <p className="text-[8px] text-slate-400">Click or Drag & Drop</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-3 mt-4">
+                    <button 
+                      onClick={() => {
+                        if (method === 'text') {
+                          handleNeetTextUpload(sub, neetPastedTexts[sub]);
+                        } else {
+                          if (file) {
+                            handleNeetFileUpload(sub, file);
+                          } else {
+                            alert('Please select a PDF or Image file first.');
+                          }
+                        }
+                      }}
+                      disabled={isAiLoading || (method === 'text' ? !neetPastedTexts[sub]?.trim() : !file)}
+                      className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-black disabled:opacity-50 transition-colors"
+                    >
+                      {isAiLoading ? 'Analyzing...' : `Extract ${sub}`}
+                    </button>
+                    <div className="text-center">
+                      <p className="text-[10px] font-bold text-slate-400">
+                        {neetData[sub]?.length || 0} Questions Ready
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <button 
@@ -2823,36 +3122,152 @@ const CUETExamView = ({
           <p className="text-slate-500 font-bold text-xs tracking-widest uppercase">Direct Question Data Import & Simulation</p>
         </div>
         <div className="bg-white shadow-2xl p-8 rounded-[40px] border border-slate-100 space-y-6">
-          <div className="space-y-2">
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Paste Question Paper Content Here</label>
-            <textarea 
-              value={pastedText}
-              onChange={(e) => setPastedText(e.target.value)}
-              placeholder="1. Question text here...&#10;A) Option 1&#10;B) Option 2&#10;C) Option 3&#10;D) Option 4..."
-              className="w-full h-64 p-6 bg-slate-50 border border-slate-200 rounded-3xl outline-none focus:border-blue-500 transition-all font-mono text-sm leading-relaxed"
-            />
+          {/* Choice Selection Tabs: Text Paste vs File Upload */}
+          <div className="flex bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
+            <button
+              onClick={() => setUploadMethod('text')}
+              className={`flex-1 py-3 text-xs font-black uppercase rounded-xl transition-all ${
+                uploadMethod === 'text' 
+                  ? 'bg-blue-600 text-white shadow-md' 
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Paste Text Pattern
+            </button>
+            <button
+              onClick={() => setUploadMethod('file')}
+              className={`flex-1 py-3 text-xs font-black uppercase rounded-xl transition-all ${
+                uploadMethod === 'file' 
+                  ? 'bg-blue-600 text-white shadow-md' 
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Upload PDF or Image File
+            </button>
           </div>
-          
-          <button 
-            onClick={() => handleCuetTextUpload(pastedText)}
-            disabled={isAiLoading || !pastedText.trim()}
-            className="w-full bg-blue-600 text-white font-black py-5 rounded-2xl uppercase tracking-tighter text-xl shadow-xl hover:bg-blue-700 active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-50"
-          >
-            {isAiLoading ? (
-              <>
-                <Loader2 className="w-6 h-6 animate-spin" />
-                NEURAL ANALYSIS IN PROGRESS...
-              </>
-            ) : (
-              <>
-                <Zap className="w-6 h-6" />
-                START SIMULATION
-              </>
-            )}
-          </button>
+
+          {uploadMethod === 'text' ? (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Paste Question Paper Content Here</label>
+                <textarea 
+                  value={pastedText}
+                  onChange={(e) => setPastedText(e.target.value)}
+                  placeholder="1. Question text here...&#10;A) Option 1&#10;B) Option 2&#10;C) Option 3&#10;D) Option 4..."
+                  className="w-full h-64 p-6 bg-slate-50 border border-slate-200 rounded-3xl outline-none focus:border-blue-500 transition-all font-mono text-sm leading-relaxed"
+                />
+              </div>
+              
+              <button 
+                onClick={() => handleCuetTextUpload(pastedText)}
+                disabled={isAiLoading || !pastedText.trim()}
+                className="w-full bg-blue-600 text-white font-black py-5 rounded-2xl uppercase tracking-tighter text-xl shadow-xl hover:bg-blue-700 active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+              >
+                {isAiLoading ? (
+                  <>
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                    NEURAL ANALYSIS IN PROGRESS...
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-6 h-6" />
+                    START SIMULATION
+                  </>
+                )}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Upload Question paper file</label>
+                
+                <div 
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                    const file = e.dataTransfer.files?.[0];
+                    if (file && (file.type === 'application/pdf' || file.type.startsWith('image/'))) {
+                      setSelectedUploadFile(file);
+                    } else {
+                      alert('Please upload a valid PDF file or Image.');
+                    }
+                  }}
+                  onClick={() => document.getElementById('paper-input-file')?.click()}
+                  className={`border-3 border-dashed rounded-3xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[220px] ${
+                    isDragging 
+                      ? 'border-blue-600 bg-blue-50/20' 
+                      : selectedUploadFile 
+                        ? 'border-emerald-500 bg-emerald-50/10' 
+                        : 'border-slate-200 bg-slate-50/50 hover:bg-slate-50 hover:border-slate-400'
+                  }`}
+                >
+                  <input 
+                    id="paper-input-file"
+                    type="file" 
+                    accept="application/pdf,image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) setSelectedUploadFile(file);
+                    }}
+                    className="hidden" 
+                  />
+                  
+                  {selectedUploadFile ? (
+                    <div className="space-y-3">
+                      <div className="p-4 bg-emerald-100 text-emerald-600 rounded-full w-14 h-14 mx-auto flex items-center justify-center">
+                        <FileText className="w-7 h-7" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-black text-slate-800 truncate max-w-xs mx-auto">{selectedUploadFile.name}</p>
+                        <p className="text-[10px] text-slate-400 uppercase font-bold mt-1">{(selectedUploadFile.size / (1024 * 1024)).toFixed(2)} MB • {selectedUploadFile.type || 'Document'}</p>
+                      </div>
+                      <span className="inline-block text-[9px] bg-slate-100 text-slate-600 font-bold px-2 py-1 rounded-md uppercase">Click to replace file</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="p-4 bg-blue-50 text-blue-500 rounded-full w-14 h-14 mx-auto flex items-center justify-center transition-transform">
+                        <FileText className="w-7 h-7" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-slate-900">Drag & drop your question paper PDF or Image here</p>
+                        <p className="text-xs text-slate-400 mt-1">Supports standard PDF papers or scanned page images</p>
+                      </div>
+                      <button className="px-4 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-wider">Browse File</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <button 
+                onClick={() => {
+                  if (selectedUploadFile) {
+                    handleCuetImageUpload(selectedUploadFile);
+                  } else {
+                    alert('Please select a file first.');
+                  }
+                }}
+                disabled={isAiLoading || !selectedUploadFile}
+                className="w-full bg-blue-600 text-white font-black py-5 rounded-2xl uppercase tracking-tighter text-xl shadow-xl hover:bg-blue-700 active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+              >
+                {isAiLoading ? (
+                  <>
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                    AI PROCESSING ENTIRE PAPER...
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-6 h-6" />
+                    EXTRACT & START PRACTICE
+                  </>
+                )}
+              </button>
+            </div>
+          )}
           
           <div className="text-center">
-            <button onClick={() => setCuetStatus('selection')} className="text-slate-400 font-bold text-xs uppercase underline">Back to Selection</button>
+            <button onClick={() => setCuetStatus('selection')} className="text-slate-400 font-bold text-xs uppercase underline hover:text-slate-900 transition-all">Back to Selection</button>
           </div>
         </div>
         <div className="bg-amber-50 p-8 rounded-3xl border border-amber-100 space-y-3">
@@ -3624,10 +4039,23 @@ const CUETExamView = ({
                 {/* Dynamically zoomed question content */}
                 <div 
                   style={{ fontSize: `${1 * (nestTextZoom / 100)}rem` }} 
-                  className="font-bold text-slate-900 leading-relaxed mb-8 select-text whitespace-pre-wrap"
+                  className="font-bold text-slate-900 leading-relaxed mb-4 select-text whitespace-pre-wrap"
                 >
                   {currentQ?.question}
                 </div>
+
+                {/* Dynamically Rendered SVG Diagrams/Figures */}
+                {currentQ?.diagramSvg && (
+                  <div className="my-6 p-4 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col items-center select-none max-w-2xl">
+                    {currentQ?.diagramTitle && (
+                      <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 font-orbitron">{currentQ.diagramTitle}</div>
+                    )}
+                    <div 
+                      className="p-4 bg-white rounded-xl shadow-xs border border-slate-100 flex items-center justify-center max-w-full overflow-auto text-slate-800"
+                      dangerouslySetInnerHTML={{ __html: currentQ.diagramSvg }} 
+                    />
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 gap-3.5 max-w-2xl select-text">
                   {currentQ?.options.map((opt: string, i: number) => {
@@ -4063,7 +4491,20 @@ const CUETExamView = ({
             </div>
             
             <div className="flex-1 p-6 sm:p-10 overflow-y-auto">
-              <div className="text-lg font-bold text-slate-800 leading-relaxed mb-10 select-none whitespace-pre-wrap">{currentQ?.question}</div>
+              <div className="text-lg font-bold text-slate-800 leading-relaxed mb-6 select-none whitespace-pre-wrap">{currentQ?.question}</div>
+              
+              {/* Dynamically Rendered SVG Diagrams/Figures */}
+              {currentQ?.diagramSvg && (
+                <div className="my-6 p-4 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col items-center select-none max-w-2xl">
+                  {currentQ?.diagramTitle && (
+                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 font-orbitron">{currentQ.diagramTitle}</div>
+                  )}
+                  <div 
+                    className="p-4 bg-white rounded-xl shadow-xs border border-slate-100 flex items-center justify-center max-w-full overflow-auto text-slate-800"
+                    dangerouslySetInnerHTML={{ __html: currentQ.diagramSvg }} 
+                  />
+                </div>
+              )}
               
               <div className="grid grid-cols-1 gap-4 max-w-2xl">
                 {currentQ?.options.map((opt: string, i: number) => {
@@ -4228,6 +4669,20 @@ const CUETExamView = ({
                     <div key={idx} className={`p-6 rounded-3xl border ${item.isCorrect ? 'bg-green-50 border-green-100' : item.selectedIdx === -1 ? 'bg-slate-50 border-slate-100' : 'bg-red-50 border-red-100'} transition-all`}>
                       <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Question {idx + 1}</p>
                       <h4 className="text-sm font-bold text-slate-800 leading-relaxed mb-4">{item.question}</h4>
+                      
+                      {/* Dynamically Rendered SVG Diagrams/Figures inside Review */}
+                      {item.diagramSvg && (
+                        <div className="my-4 p-3 bg-white/60 rounded-2xl border border-slate-200/50 flex flex-col items-center select-none max-w-xl">
+                          {item.diagramTitle && (
+                            <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2 font-orbitron">{item.diagramTitle}</div>
+                          )}
+                          <div 
+                            className="p-3 bg-white rounded-xl shadow-xs border border-slate-100 flex items-center justify-center max-w-full overflow-auto text-slate-800"
+                            dangerouslySetInnerHTML={{ __html: item.diagramSvg }} 
+                          />
+                        </div>
+                      )}
+
                       <div className="grid grid-cols-1 gap-2">
                         {item.options.map((opt: string, optIdx: number) => {
                           const isCorrectOpt = optIdx === item.correct;
