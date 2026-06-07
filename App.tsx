@@ -1434,13 +1434,79 @@ const MathOrImageRenderer: React.FC<{ text: string; className?: string; imgClass
   );
 };
 
+export const getNestEstimation = (score: number) => {
+  if (score >= 115) {
+    return {
+      percentile: "99.5+",
+      chanceGen: "Excellent (Top Ranks)",
+      chanceEws: "Guaranteed Selection",
+      suggestion: "Outstanding performance! You are on track for a top merit rank at NISER/UM-DAE CEBS. Keep polishing your time management and stay calm on the actual exam day to lock in your top position.",
+      badgeColor: [34, 197, 94] // Emerald
+    };
+  } else if (score >= 95) {
+    return {
+      percentile: "98.5 - 99.4",
+      chanceGen: "Very High Chance",
+      chanceEws: "Very High Chance",
+      suggestion: "Excellent score! Your grasp over the syllabus is highly competitive. Focus on analyzing your minor error patterns and reducing silly mistakes to secure a solid rank.",
+      badgeColor: [132, 204, 22] // Light green
+    };
+  } else if (score >= 80) {
+    return {
+      percentile: "96.0 - 98.4",
+      chanceGen: "Borderline / Moderate",
+      chanceEws: "Good Chance",
+      suggestion: "Decent score, but on the borderline of the general category cutoff. To be safe, focus on error analysis of your weaker topics and solve more timed mock tests.",
+      badgeColor: [234, 179, 8] // Yellow
+    };
+  } else if (score >= 65) {
+    return {
+      percentile: "90.0 - 95.9",
+      chanceGen: "Low Chance",
+      chanceEws: "Borderline",
+      suggestion: "Your concepts are moderately clear, but your speed and accuracy require reinforcement. Focus on revising high-weightage chapters and avoid guessing answers to save negative marking.",
+      badgeColor: [249, 115, 22] // Orange
+    };
+  } else {
+    return {
+      percentile: "Below 90",
+      chanceGen: "Very Low",
+      chanceEws: "Low",
+      suggestion: "Extensive study and foundational revision are needed across all subjects. Make a strict study plan, focus heavily on textbook key exercises, and avoid guessing since negative marks (-1) damage your rank.",
+      badgeColor: [239, 68, 68] // Red
+    };
+  }
+};
+
 const AppContent: React.FC = () => {
   // Exam Hub state
-  const [examType, setExamType] = useState<'cuet' | 'neet' | 'jee' | 'nest' | null>(null);
+  const [examType, setExamType] = useState<'cuet' | 'neet' | 'jee' | 'nest' | 'jipmat' | null>(null);
   const [cuetStatus, setCuetStatus] = useState<'selection' | 'upload' | 'instructions' | 'exam' | 'terminated' | 'finished' | 'nest-login' | 'nest-instructions' | 'nest-other-instructions'>('selection');
   const [cuetQuestions, setCuetQuestions] = useState<any[]>([]);
   const [neetData, setNeetData] = useState<Record<string, any[]>>({ 'Physics': [], 'Chemistry': [], 'Biology': [] });
   const [nestData, setNestData] = useState<Record<string, any[]>>({ 'Biology': [], 'Chemistry': [], 'Physics': [] });
+  
+  // JIPMAT specific states
+  const [jipmatData, setJipmatData] = useState<Record<string, any[]>>({
+    'Quantitative Aptitude (QA)': [],
+    'Data Interpretation & Logical Reasoning (DILR)': [],
+    'Verbal Ability & Reading Comprehension (VARC)': []
+  });
+  const [jipmatUploadMethods, setJipmatUploadMethods] = useState<Record<string, 'text' | 'file'>>({
+    'Quantitative Aptitude (QA)': 'text',
+    'Data Interpretation & Logical Reasoning (DILR)': 'text',
+    'Verbal Ability & Reading Comprehension (VARC)': 'text'
+  });
+  const [jipmatFiles, setJipmatFiles] = useState<Record<string, File | null>>({
+    'Quantitative Aptitude (QA)': null,
+    'Data Interpretation & Logical Reasoning (DILR)': null,
+    'Verbal Ability & Reading Comprehension (VARC)': null
+  });
+  const [jipmatPastedTexts, setJipmatPastedTexts] = useState<Record<string, string>>({
+    'Quantitative Aptitude (QA)': '',
+    'Data Interpretation & Logical Reasoning (DILR)': '',
+    'Verbal Ability & Reading Comprehension (VARC)': ''
+  });
   const [activeNeetSubject, setActiveNeetSubject] = useState<string>('Physics');
   const [cuetAnswers, setCuetAnswers] = useState<Record<number, string>>({});
   const [cuetStatusMap, setCuetStatusMap] = useState<Record<number, 'not-visited' | 'not-answered' | 'answered' | 'marked' | 'answered-marked'>>({});
@@ -1449,6 +1515,85 @@ const AppContent: React.FC = () => {
   const [cuetResult, setCuetResult] = useState<any>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [neetOmrFilled, setNeetOmrFilled] = useState<Record<number, boolean>>({});
+
+  const [isFullscreenActive, setIsFullscreenActive] = useState<boolean>(false);
+
+  const requestFullscreen = async () => {
+    try {
+      const docEl = document.documentElement;
+      if (docEl.requestFullscreen) {
+        await docEl.requestFullscreen();
+      } else if ((docEl as any).webkitRequestFullscreen) {
+        await (docEl as any).webkitRequestFullscreen();
+      } else if ((docEl as any).mozRequestFullScreen) {
+        await (docEl as any).mozRequestFullScreen();
+      } else if ((docEl as any).msRequestFullscreen) {
+        await (docEl as any).msRequestFullscreen();
+      }
+      setIsFullscreenActive(true);
+    } catch (err) {
+      console.error("Fullscreen request failed:", err);
+    }
+  };
+
+  const isFullscreenSupported = typeof document !== 'undefined' && typeof document.documentElement !== 'undefined' && (
+    typeof document.documentElement.requestFullscreen === 'function' ||
+    typeof (document.documentElement as any).webkitRequestFullscreen === 'function' ||
+    typeof (document.documentElement as any).mozRequestFullScreen === 'function' ||
+    typeof (document.documentElement as any).msRequestFullscreen === 'function'
+  );
+
+  // Monitor fullscreen changes automatically
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const isFs = !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+      );
+      setIsFullscreenActive(isFs);
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
+    document.addEventListener("mozfullscreenchange", handleFullscreenChange);
+    document.addEventListener("MSFullscreenChange", handleFullscreenChange);
+
+    handleFullscreenChange(); // Run once immediately
+
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
+      document.removeEventListener("mozfullscreenchange", handleFullscreenChange);
+      document.removeEventListener("MSFullscreenChange", handleFullscreenChange);
+    };
+  }, []);
+
+  // Alert on back/reload while exam is active
+  useEffect(() => {
+    if (cuetStatus === 'exam') {
+      const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+        e.preventDefault();
+        e.returnValue = "Exam is in progress! If you refresh or exit, your performance data might be lost.";
+        return e.returnValue;
+      };
+
+      // Push history state to intercept browser Back button
+      window.history.pushState(null, "", window.location.href);
+      const handlePopState = () => {
+        window.history.pushState(null, "", window.location.href);
+        alert("The back/home gestures are disabled during the live mock exam to preserve process reliability. Please use the on-screen controls to submit your paper when finished.");
+      };
+
+      window.addEventListener('beforeunload', handleBeforeUnload);
+      window.addEventListener('popstate', handlePopState);
+      return () => {
+        window.removeEventListener('beforeunload', handleBeforeUnload);
+        window.removeEventListener('popstate', handlePopState);
+      };
+    }
+  }, [cuetStatus]);
 
   // Auto-fill candidate name
   const candidateName = "PALLAVI";
@@ -1592,9 +1737,146 @@ const AppContent: React.FC = () => {
     setCuetStatusMap({});
     setActiveNeetSubject(firstAvailableSubject);
 
-    // Dynamic timer: 1 hour per section, max 3 hours (10800 seconds)
-    const duration = filledSectionsCount * 3600;
-    setCuetTimeLeft(duration);
+    // Dynamic timer: 1.5 minutes (90 seconds) per question
+    setCuetTimeLeft(allQs.length * 90);
+    setCuetStatus('nest-login');
+  };
+
+  const handleJipmatTextUpload = async (subject: string, pastedText: string) => {
+    const apiKey = process.env.GEMINI_API_KEY || (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY);
+    if (!apiKey) { alert("AI Service is currently unavailable. Please ensure GEMINI_API_KEY is set."); return; }
+    if (!pastedText.trim()) { alert("Please paste some text first."); return; }
+
+    setIsAiLoading(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `You are an AI that extracts exam questions specifically for the JIPMAT Exam (Joint Integrated Programme in Management Admission Test).
+      Extract all multiple choice questions for the section ${subject} from the following text.
+      Format each question as an object with:
+      1. question: the full text of the question. Keep it exactly literal to the source text with NO custom changes, rewrites, or omissions to prevent mistakes.
+      2. options: an array of EXACTLY 4 strings.
+         CRITICAL: You MUST sanitize every option string by completely removing any correct-answer indicators, asterisks (*), bold formatting markdown (like **option** or *option*), ticks, checkmarks, arrows, or trailing suffixes like "(correct)", "(ans)", "(Answer)", "Ans:", "Answer is Option", etc. All 4 options MUST look completely identical, standard, and uniform in formatting so that there is absolutely NO textual clue or bolding pointing to the correct choice.
+      3. diagramSvg: A string containing beautifully structured standard inline vector <svg> code representing any diagram, graph, drawing, coordinates, pulleys on incline slope, physics circuit diagram, or chemical compound mentioned or present in the question. Include coordinate axes with clear labels, visual nodes, vectors, arrows, and elegant styling. Note: Background should be transparent or white, stroke colors MUST use dark grays (#333333, #475569) so they are outstanding. Width of this <svg> should be 100% and height should be around 150-250px. If no diagram/graph is needed or present for the question, set this field to null or "".
+      4. diagramTitle: A short string title of the diagram (e.g., "Pulley Incline Slope Diagram", "Resistor Parallel Circuit") if diagramSvg is present, otherwise null or "".
+      5. correct: the index (0-3) of the correct answer (if marked, or deduce if possible. If you can't deduce the correct answer, pick index 0 as default)
+      
+      Text to process:
+      ${pastedText}
+      
+      Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: [{ parts: [{ text: prompt }] }],
+      });
+      const text = response.text;
+      const jsonMatch = text ? text.match(/\[[\s\S]*\]/) : null;
+      if (jsonMatch) {
+        const extracted = JSON.parse(jsonMatch[0]);
+        if (extracted.length > 0) {
+          const limit = subject.includes('VARC') ? 34 : 33;
+          const slicedExtracted = extracted.slice(0, limit);
+          setJipmatData(prev => ({ ...prev, [subject]: slicedExtracted }));
+          alert(`${slicedExtracted.length} questions extracted for JIPMAT ${subject}.`);
+        } else {
+          alert(`No questions found for ${subject}.`);
+        }
+      } else {
+        alert("Failed to parse questions from AI response. Please try again with clear question text.");
+      }
+    } catch (error: any) {
+      console.error('JIPMAT Extraction Error:', error);
+      alert('Failed: ' + error.message);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const handleJipmatFileUpload = async (subject: string, file: File) => {
+    const apiKey = process.env.GEMINI_API_KEY || (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY);
+    if (!apiKey) { alert("AI Service is currently unavailable. Please ensure GEMINI_API_KEY is set."); return; }
+
+    setIsAiLoading(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const fileToGenerativePart = async (f: File) => {
+        const base64EncodedDataPromise = new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+          reader.readAsDataURL(f);
+        });
+        return {
+          inlineData: { data: await base64EncodedDataPromise as string, mimeType: f.type },
+        };
+      };
+
+      const fileData = await fileToGenerativePart(file);
+      const prompt = `You are an AI that extracts exam questions specifically for the JIPMAT Exam (Joint Integrated Programme in Management Admission Test).
+      Extract all multiple choice questions for the section ${subject} from this question paper file (image or PDF).
+      Format each question as an object with:
+      1. question: the full text of the question. Keep it exactly literal to the source text with NO custom changes, rewrites, or omissions to prevent mistakes.
+      2. options: an array of EXACTLY 4 strings.
+         CRITICAL: You MUST sanitize every option string by completely removing any correct-answer indicators, asterisks (*), bold formatting markdown (like **option** or *option*), ticks, checkmarks, arrows, or trailing suffixes like "(correct)", "(ans)", "(Answer)", "Ans:", "Answer is Option", etc. All 4 options MUST look completely identical, standard, and uniform in formatting so that there is absolutely NO textual clue or bolding pointing to the correct choice.
+      3. diagramSvg: A string containing beautifully structured standard inline vector <svg> code representing any diagram, graph, drawing, coordinates, pulleys on incline slope, physics circuit diagram, or chemical compound mentioned or present in the question. Include coordinate axes with clear labels, visual nodes, vectors, arrows, and elegant styling. Note: Background should be transparent or white, stroke colors MUST use dark grays (#333333, #475569) so they are outstanding. Width of this <svg> should be 100% and height should be around 150-250px. If no diagram/graph is needed or present for the question, set this field to null or "".
+      4. diagramTitle: A short string title of the diagram (e.g., "Pulley Incline Slope Diagram", "Resistor Parallel Circuit") if diagramSvg is present, otherwise null or "".
+      5. correct: the index (0-3) of the correct answer (if marked, or deduce if possible. If you can't deduce the correct answer, pick index 0 as default)
+      
+      Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: [{ parts: [{ text: prompt }, fileData] }],
+      });
+      const text = response.text;
+      const jsonMatch = text ? text.match(/\[[\s\S]*\]/) : null;
+      if (jsonMatch) {
+         const extracted = JSON.parse(jsonMatch[0]);
+         if (extracted.length > 0) {
+           const limit = subject.includes('VARC') ? 34 : 33;
+           const slicedExtracted = extracted.slice(0, limit);
+           setJipmatData(prev => ({ ...prev, [subject]: slicedExtracted }));
+           alert(`${slicedExtracted.length} questions extracted for JIPMAT ${subject}.`);
+         } else {
+           alert(`No questions found for ${subject}.`);
+         }
+      } else {
+        alert("Found issue parsing AI response. Please try again.");
+      }
+    } catch (error: any) {
+      console.error('JIPMAT File Extraction Error:', error);
+      alert('Failed: ' + error.message);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const startJipmatSimulation = () => {
+    const allQs: any[] = [];
+    const subjects = [
+      'Quantitative Aptitude (QA)',
+      'Data Interpretation & Logical Reasoning (DILR)',
+      'Verbal Ability & Reading Comprehension (VARC)'
+    ];
+
+    subjects.forEach(sub => {
+      const qs = jipmatData[sub] || [];
+      qs.forEach((q, idx) => {
+        allQs.push({ ...q, subject: sub, sectionIndex: idx });
+      });
+    });
+
+    if (allQs.length === 0) {
+      alert("Please upload and extract questions for JIPMAT sections first.");
+      return;
+    }
+
+    setCuetQuestions(allQs);
+    setCuetAnswers({});
+    setCuetStatusMap({});
+    setActiveNeetSubject('Quantitative Aptitude (QA)');
+
+    // JIPMAT duration scales dynamically: 1.5 minutes (90 seconds) per question
+    setCuetTimeLeft(allQs.length * 90);
     setCuetStatus('nest-login');
   };
 
@@ -1714,7 +1996,8 @@ const AppContent: React.FC = () => {
     setCuetQuestions(allQs);
     setCuetAnswers({});
     setCuetStatusMap({});
-    setCuetTimeLeft(10800); // 3 hours (180 minutes)
+    // NEET duration scales dynamically: 1.5 minutes (90 seconds) per question
+    setCuetTimeLeft(allQs.length * 90);
     setCuetStatus('instructions');
   };
 
@@ -1768,7 +2051,8 @@ const AppContent: React.FC = () => {
           setCuetStatus('instructions');
           setCuetAnswers({});
           setCuetStatusMap({});
-          setCuetTimeLeft(3600);
+          // Dynamic timer: 1.5 minutes (90 seconds) per extracted question
+          setCuetTimeLeft(extractedQuestions.length * 90);
         } else {
           alert("AI couldn't find any questions in the text provided. Please check the format.");
         }
@@ -1837,7 +2121,8 @@ const AppContent: React.FC = () => {
           setCuetStatus('instructions');
           setCuetAnswers({});
           setCuetStatusMap({});
-          setCuetTimeLeft(3600);
+          // Dynamic timer: 1.5 minutes (90 seconds) per extracted question
+          setCuetTimeLeft(extractedQuestions.length * 90);
         } else {
           alert("AI couldn't find any questions in the image. Please try a clearer one.");
         }
@@ -1891,6 +2176,14 @@ const AppContent: React.FC = () => {
           handleNestTextUpload={handleNestTextUpload}
           handleNestFileUpload={handleNestFileUpload}
           startNestSimulation={startNestSimulation}
+          jipmatData={jipmatData}
+          handleJipmatTextUpload={handleJipmatTextUpload}
+          handleJipmatFileUpload={handleJipmatFileUpload}
+          startJipmatSimulation={startJipmatSimulation}
+          isFullscreenActive={isFullscreenActive}
+          setIsFullscreenActive={setIsFullscreenActive}
+          isFullscreenSupported={isFullscreenSupported}
+          requestFullscreen={requestFullscreen}
         />
       </div>
       <footer className="py-8 border-t border-slate-900">
@@ -1912,7 +2205,9 @@ const CUETExamView = ({
   neetData, startNeetSimulation, activeNeetSubject, setActiveNeetSubject,
   isAiLoading, cuetStatusMap, setCuetStatusMap,
   neetOmrFilled, setNeetOmrFilled,
-  nestData, handleNestTextUpload, handleNestFileUpload, startNestSimulation
+  nestData, handleNestTextUpload, handleNestFileUpload, startNestSimulation,
+  jipmatData, handleJipmatTextUpload, handleJipmatFileUpload, startJipmatSimulation,
+  isFullscreenActive, setIsFullscreenActive, isFullscreenSupported, requestFullscreen
 }: any) => {
   const [activeQuestion, setActiveQuestion] = useState(0);
   const [unlockCode, setUnlockCode] = useState('');
@@ -1943,9 +2238,25 @@ const CUETExamView = ({
   const [nestFiles, setNestFiles] = useState<Record<string, File | null>>({
     'Biology': null, 'Chemistry': null, 'Physics': null
   });
+  const [jipmatUploadMethods, setJipmatUploadMethods] = useState<Record<string, 'text' | 'file'>>({
+    'Quantitative Aptitude (QA)': 'text',
+    'Data Interpretation & Logical Reasoning (DILR)': 'text',
+    'Verbal Ability & Reading Comprehension (VARC)': 'text'
+  });
+  const [jipmatFiles, setJipmatFiles] = useState<Record<string, File | null>>({
+    'Quantitative Aptitude (QA)': null,
+    'Data Interpretation & Logical Reasoning (DILR)': null,
+    'Verbal Ability & Reading Comprehension (VARC)': null
+  });
+  const [jipmatPastedTexts, setJipmatPastedTexts] = useState<Record<string, string>>({
+    'Quantitative Aptitude (QA)': '',
+    'Data Interpretation & Logical Reasoning (DILR)': '',
+    'Verbal Ability & Reading Comprehension (VARC)': ''
+  });
 
   // NEST specific states
   const [nestCandidateName, setNestCandidateName] = useState('John Smith');
+  const [nestCandidateEmail, setNestCandidateEmail] = useState('candidate@example.com');
   const [nestCandidatePhoto, setNestCandidatePhoto] = useState<string>('https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200');
   const [nestDefaultLanguage, setNestDefaultLanguage] = useState<'English' | 'Hindi' | ''>('');
   const [isDisclaimerChecked, setIsDisclaimerChecked] = useState(false);
@@ -1984,9 +2295,29 @@ const CUETExamView = ({
   const isDegrees = cDegree === 'degree';
 
   // Gmail integration states
-  const [gmailToken, setGmailToken] = useState<string | null>(null);
-  const [gmailUserEmail, setGmailUserEmail] = useState<string>('');
-  const [gmailUserName, setGmailUserName] = useState<string>('');
+  const [gmailToken, setGmailToken] = useState<string | null>(() => localStorage.getItem('gmailToken'));
+  const [gmailUserEmail, setGmailUserEmail] = useState<string>(() => localStorage.getItem('gmailUserEmail') || '');
+  const [gmailUserName, setGmailUserName] = useState<string>(() => localStorage.getItem('gmailUserName') || '');
+
+  useEffect(() => {
+    // Attempt to load the shared admin gmail token from Firestore so normal users don't need to authorize
+    const loadSharedGmailToken = async () => {
+      try {
+        const docSnap = await getDoc(doc(db, "adminConfig", "gmail"));
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data && data.accessToken) {
+            setGmailToken(data.accessToken);
+            if (data.email) setGmailUserEmail(data.email);
+            if (data.name) setGmailUserName(data.name);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch shared gmail token from Firestore, falling back to local:", err);
+      }
+    };
+    loadSharedGmailToken();
+  }, []);
   const [sendingEmail, setSendingEmail] = useState<boolean>(false);
   const [emailSentStatus, setEmailSentStatus] = useState<'idle' | 'success' | 'failure' | 'sending'>('idle');
   const [emailErrorMsg, setEmailErrorMsg] = useState<string>('');
@@ -2013,32 +2344,118 @@ const CUETExamView = ({
     try {
       const name = currentUser?.name || nestCandidateName || "PALLAVI";
       const rollNo = nestUserId || "N/A";
-      const formattedExamType = examType === 'nest' ? 'NEST Exam' : examType === 'neet' ? 'NEET UG' : 'CUET';
+      const formattedExamType = examType === 'nest' ? 'NEST Exam' : examType === 'jipmat' ? 'JIPMAT' : examType === 'neet' ? 'NEET UG' : 'CUET';
       const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
 
-      // Build subject-wise rows if NEST
+      // Calculate time specs
+      const formatSecToMinSec = (s: number) => {
+        const mins = Math.floor(s / 60);
+        const secs = Math.round(s % 60);
+        return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+      };
+
+      const totalTimeSpentSec = 3600 - cuetTimeLeft;
+      const overallTimeSpentStr = formatSecToMinSec(totalTimeSpentSec);
+
+      const correct = results.correct ?? 0;
+      const incorrect = results.incorrect ?? 0;
+      const left = results.unattempted ?? 0;
+      const totalQuestions = results.details?.length ?? 20;
+      const score = results.score ?? 0;
+      const totalMaxScore = results.total ?? 0;
+      const overallAccuracy = (correct + incorrect) > 0 ? (correct / (correct + incorrect)) * 100 : 0;
+      const attemptRatio = (((correct + incorrect) / Math.max(1, totalQuestions)) * 100).toFixed(0);
+
+      // Build subject-wise rows if NEST or JIPMAT
       let subjectRows = '';
-      if (examType === 'nest') {
-        const subjectsList = ['Biology', 'Chemistry', 'Physics'];
+      if (examType === 'nest' || examType === 'jipmat') {
+        const subjectsList = examType === 'jipmat'
+          ? ['Quantitative Aptitude (QA)', 'Data Interpretation & Logical Reasoning (DILR)', 'Verbal Ability & Reading Comprehension (VARC)']
+          : ['Biology', 'Chemistry', 'Physics'];
         const detailsList = results.details || [];
         
-        subjectsList.forEach((sub) => {
+        subjectsList.forEach((sub, idx) => {
           const subQuestions = detailsList.filter((q: any) => q.subject?.toLowerCase() === sub.toLowerCase() || q.subject === sub);
           const subCorrect = subQuestions.filter((q: any) => q.isCorrect).length;
           const subIncorrect = subQuestions.filter((q: any) => q.selectedIdx !== -1 && !q.isCorrect).length;
           const subLeft = subQuestions.filter((q: any) => q.selectedIdx === -1).length;
-          const subScore = subCorrect * 3 - subIncorrect;
-          const subMax = subQuestions.length * 3;
+          const schemeMul = examType === 'jipmat' ? 4 : 3;
+          const subScore = subCorrect * schemeMul - subIncorrect;
+          const subMax = subQuestions.length * schemeMul;
+          const subAccuracyVal = (subCorrect + subIncorrect) > 0 ? ((subCorrect / (subCorrect + subIncorrect)) * 100).toFixed(1) + "%" : "0.0%";
+          
+          // Est. Section Time
+          const subAnswered = subCorrect + subIncorrect;
+          const overallAnswered = correct + incorrect || 1;
+          const subTimeSpentSec = Math.round((subAnswered / overallAnswered) * totalTimeSpentSec);
+          const subTimeStr = formatSecToMinSec(subTimeSpentSec);
+
+          const rowBg = idx % 2 === 0 ? '#f8fafc' : '#eff6ff';
 
           subjectRows += `
-            <tr style="border-bottom: 1px solid #e2e8f0;">
+            <tr style="background-color: ${rowBg}; border-bottom: 1px solid #e2e8f0; font-size: 11px; color: #334155;">
               <td style="padding: 10px; font-weight: bold; color: #1e293b;">${sub.toUpperCase()}</td>
-              <td style="padding: 10px; text-align: center; color: #166534;">+${subCorrect}</td>
-              <td style="padding: 10px; text-align: center; color: #991b1b;">-${subIncorrect}</td>
+              <td style="padding: 10px; text-align: center;">${subQuestions.length}</td>
+              <td style="padding: 10px; text-align: center; color: #166534; font-weight: bold;">+${subCorrect}</td>
+              <td style="padding: 10px; text-align: center; color: #991b1b; font-weight: bold;">-${subIncorrect}</td>
+              <td style="padding: 10px; text-align: center; color: #64748b;">${subLeft}</td>
               <td style="padding: 10px; text-align: center; font-weight: bold; color: #0f172a;">${subScore} / ${subMax}</td>
+              <td style="padding: 10px; text-align: center;">${subTimeStr}</td>
+              <td style="padding: 10px; text-align: center; font-weight: bold; color: #2563eb;">${subAccuracyVal}</td>
             </tr>
           `;
         });
+
+        // Overall Totals Row
+        subjectRows += `
+          <tr style="background-color: #1e293b; color: #ffffff; font-weight: bold; font-size: 11px;">
+            <td style="padding: 10px;">TOTALS</td>
+            <td style="padding: 10px; text-align: center;">${totalQuestions}</td>
+            <td style="padding: 10px; text-align: center; color: #4ade80;">+${correct}</td>
+            <td style="padding: 10px; text-align: center; color: #f87171;">-${incorrect}</td>
+            <td style="padding: 10px; text-align: center; color: #94a3b8;">${left}</td>
+            <td style="padding: 10px; text-align: center;">${score} / ${totalMaxScore}</td>
+            <td style="padding: 10px; text-align: center;">${overallTimeSpentStr}</td>
+            <td style="padding: 10px; text-align: center; color: #60a5fa;">${overallAccuracy.toFixed(1)}%</td>
+          </tr>
+        `;
+      }
+
+      // Build selection chance block if NEST
+      let selectivityHtml = '';
+      if (examType === 'nest') {
+        const niserInfo = getNestEstimation(score);
+        const rgbColor = `rgb(${niserInfo.badgeColor[0]}, ${niserInfo.badgeColor[1]}, ${niserInfo.badgeColor[2]})`;
+        
+        selectivityHtml = `
+          <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; margin-top: 16px; border-radius: 12px;">
+            <h2 style="margin: 0 0 12px 0; font-size: 15px; font-weight: bold; color: #0f172a; border-bottom: 2px solid #f1f5f9; padding-bottom: 6px;">NISER Selection Zone & Benchmark Analysis</h2>
+            
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 12px;">
+              <tr>
+                <td style="padding: 6px 0; color: #64748b; width: 60%;"><strong>Estimated Percentile Range:</strong></td>
+                <td style="padding: 6px 0; color: #166534; font-weight: bold; font-size: 14px;">${niserInfo.percentile}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>NISER Selection Chance (General):</strong></td>
+                <td style="padding: 6px 0; color: ${rgbColor}; font-weight: bold;">${niserInfo.chanceGen}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>NISER Selection Chance (EWS):</strong></td>
+                <td style="padding: 6px 0; color: ${rgbColor}; font-weight: bold;">${niserInfo.chanceEws}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>Suggestive Critique State:</strong></td>
+                <td style="padding: 6px 0; color: #0f172a; font-weight: bold;">${score >= 95 ? "Highly Receptive Zone" : score >= 80 ? "Progressive Border" : "Needs Re-Evaluation"}</td>
+              </tr>
+            </table>
+
+            <div style="background-color: #eff6ff; border-left: 4px solid #2563eb; padding: 12px; border-radius: 4px; font-size: 12.5px; line-height: 1.5; color: #1e3a8a;">
+              <strong>Diagnostic Critique & Core Suggestions:</strong><br/>
+              ${niserInfo.suggestion}
+            </div>
+          </div>
+        `;
       }
 
       // Build question by question analysis in HTML
@@ -2093,7 +2510,7 @@ const CUETExamView = ({
           `;
         });
 
-        const hasDiagram = item.diagramSvg ? '<em style="color:#64748b; font-size:11px;">[Embedded math/science diagram included in exam visual system]</em>' : '';
+        const hasDiagram = item.diagramSvg ? '<em style="color:#64748b; font-size:11px; display:block; margin: 4px 0 8px 0;">[Contains embedded math/science vector diagram]</em>' : '';
         const qSub = item.subject ? `<span style="font-size:11px; font-weight:bold; color:#4f46e5; text-transform:uppercase;">[${item.subject}]</span>` : '';
 
         questionAnalysisHtml += `
@@ -2113,7 +2530,7 @@ const CUETExamView = ({
 
       // Construct detailed email layout
       const emailHtmlBody = `
-        <div style="font-family: Arial, sans-serif; background-color: #f8fafc; padding: 24px; color: #1e293b; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px;">
+        <div style="font-family: Arial, sans-serif; background-color: #f8fafc; padding: 24px; color: #1e293b; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px;">
           <div style="background-color: #1e293b; padding: 24px; text-align: center; border-radius: 12px 12px 0 0; color: #ffffff;">
             <h1 style="margin: 0; font-size: 20px; font-weight: bold; letter-spacing: -0.5px;">${formattedExamType} 2026</h1>
             <p style="margin: 4px 0 0 0; font-size: 12px; color: #93c5fd; font-weight: bold; text-transform: uppercase;">Official Examination Performance Report</p>
@@ -2144,43 +2561,71 @@ const CUETExamView = ({
                 <td style="padding: 4px 0; color: #64748b;"><strong>Date of Exam:</strong></td>
                 <td style="padding: 4px 0; color: #0f172a;">${timestamp}</td>
               </tr>
+              <tr>
+                <td style="padding: 4px 0; color: #64748b;"><strong>Proctor Shield:</strong></td>
+                <td style="padding: 4px 0; color: #16a34a; font-weight: bold;">TCS iON Security Shield Enforced</td>
+              </tr>
             </table>
           </div>
 
           <div style="background-color: #ffffff; padding: 24px; margin-top: 16px; border-radius: 12px; border: 1px solid #e2e8f0; text-align: center;">
             <p style="margin: 0; font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: bold; letter-spacing: 1px;">Overall Marks Obtained</p>
-            <h3 style="margin: 8px 0; font-size: 44px; font-weight: 800; color: #0f172a;">${results.score} <span style="font-size: 18px; color: #64748b;">/ ${results.total}</span></h3>
+            <h3 style="margin: 8px 0; font-size: 44px; font-weight: 800; color: #0f172a;">${score} <span style="font-size: 18px; color: #64748b;">/ ${totalMaxScore}</span></h3>
             
             <table style="width: 100%; border-collapse: collapse; margin-top: 12px;">
               <tr>
-                <td style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px; text-align: center; width: 33%;">
+                <td style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px; text-align: center; width: 25%;">
                   <p style="margin: 0; font-size: 10px; color: #166534; font-weight: bold; text-transform: uppercase;">Correct</p>
-                  <p style="margin: 2px 0 0 0; font-size: 18px; font-weight: bold; color: #15803d;">${results.correct}</p>
+                  <p style="margin: 2px 0 0 0; font-size: 18px; font-weight: bold; color: #15803d;">${correct}</p>
                 </td>
-                <td style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px; text-align: center; width: 33%;">
+                <td style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px; text-align: center; width: 25%;">
                   <p style="margin: 0; font-size: 10px; color: #991b1b; font-weight: bold; text-transform: uppercase;">Incorrect</p>
-                  <p style="margin: 2px 0 0 0; font-size: 18px; font-weight: bold; color: #b91c1c;">${results.incorrect}</p>
+                  <p style="margin: 2px 0 0 0; font-size: 18px; font-weight: bold; color: #b91c1c;">${incorrect}</p>
                 </td>
-                <td style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; text-align: center; width: 33%;">
+                <td style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; text-align: center; width: 25%;">
                   <p style="margin: 0; font-size: 10px; color: #475569; font-weight: bold; text-transform: uppercase;">Left</p>
-                  <p style="margin: 2px 0 0 0; font-size: 18px; font-weight: bold; color: #334155;">${results.unattempted}</p>
+                  <p style="margin: 2px 0 0 0; font-size: 18px; font-weight: bold; color: #334155;">${left}</p>
                 </td>
+                <td style="background-color: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px; text-align: center; width: 25%;">
+                  <p style="margin: 0; font-size: 10px; color: #1e40af; font-weight: bold; text-transform: uppercase;">Accuracy</p>
+                  <p style="margin: 2px 0 0 0; font-size: 18px; font-weight: bold; color: #2563eb;">${overallAccuracy.toFixed(1)}%</p>
+                </td>
+              </tr>
+            </table>
+
+            <table style="width: 100%; border-collapse: collapse; margin-top: 16px;">
+              <tr>
+                <td style="font-size: 12px; color: #64748b; text-align: left;"><strong>Total Time Spent:</strong> ${overallTimeSpentStr}</td>
+                <td style="font-size: 12px; color: #64748b; text-align: right;"><strong>Attempt Rate:</strong> ${correct + incorrect} / ${totalQuestions} (${attemptRatio}%)</td>
               </tr>
             </table>
           </div>
 
-          ${examType === 'nest' ? `
+          <!-- Selectivity and Benchmark block (NEST only) -->
+          ${selectivityHtml}
+
+          ${(examType === 'nest' || examType === 'jipmat') ? `
           <div style="background-color: #ffffff; padding: 20px; margin-top: 16px; border-radius: 12px; border: 1px solid #e2e8f0;">
-            <h2 style="margin: 0 0 12px 0; font-size: 15px; font-weight: bold; color: #0f172a; border-bottom: 2px solid #f1f5f9; padding-bottom: 6px;">Subject Section Matrix</h2>
-            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-              <tr style="background-color: #1e293b; color: #ffffff;">
-                <th style="padding: 8px; text-align: left;">Section</th>
-                <th style="padding: 8px; text-align: center;">Correct</th>
-                <th style="padding: 8px; text-align: center;">Incorrect</th>
-                <th style="padding: 8px; text-align: center;">Score</th>
-              </tr>
-              ${subjectRows}
-            </table>
+            <h2 style="margin: 0 0 12px 0; font-size: 15px; font-weight: bold; color: #0f172a; border-bottom: 2px solid #f1f5f9; padding-bottom: 6px;">Subject Section Performance Matrix</h2>
+            <div style="overflow-x: auto;">
+              <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                <thead>
+                  <tr style="background-color: #1e293b; color: #ffffff;">
+                    <th style="padding: 10px; text-align: left;">Section</th>
+                    <th style="padding: 10px; text-align: center;">Total Qs</th>
+                    <th style="padding: 10px; text-align: center;">Correct (+${examType === 'jipmat' ? '4' : '3'})</th>
+                    <th style="padding: 10px; text-align: center;">Incorrect (-1)</th>
+                    <th style="padding: 10px; text-align: center;">Left (0)</th>
+                    <th style="padding: 10px; text-align: center;">Sec Score</th>
+                    <th style="padding: 10px; text-align: center;">Est. Time</th>
+                    <th style="padding: 10px; text-align: center;">Accuracy</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${subjectRows}
+                </tbody>
+              </table>
+            </div>
           </div>
           ` : ''}
 
@@ -2199,6 +2644,9 @@ const CUETExamView = ({
       `;
 
       const recipientList = ['jitendrakumart557@gmail.com', 'pt617339@gmail.com'];
+      if (nestCandidateEmail && nestCandidateEmail.trim()) {
+        recipientList.push(nestCandidateEmail.trim());
+      }
       const toValue = recipientList.join(', ');
 
       const rfcMailString = [
@@ -2246,9 +2694,34 @@ const CUETExamView = ({
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (credential?.accessToken) {
         setGmailToken(credential.accessToken);
+        localStorage.setItem('gmailToken', credential.accessToken);
         setGmailAuthError(null);
-        if (result.user.email) setGmailUserEmail(result.user.email);
-        if (result.user.displayName) setGmailUserName(result.user.displayName);
+        
+        let userEmail = result.user.email || '';
+        let userName = result.user.displayName || '';
+
+        if (userEmail) {
+          setGmailUserEmail(userEmail);
+          localStorage.setItem('gmailUserEmail', userEmail);
+        }
+        if (userName) {
+          setGmailUserName(userName);
+          localStorage.setItem('gmailUserName', userName);
+        }
+
+        // Save token & user infomation to Firestore globally
+        try {
+          await setDoc(doc(db, "adminConfig", "gmail"), {
+            accessToken: credential.accessToken,
+            email: userEmail || "pt617339@gmail.com",
+            name: userName || "Admin",
+            updatedAt: new Date().toISOString()
+          });
+          console.log("Admin config gmail token successfully synchronized to Firestore.");
+        } catch (dbErr) {
+          console.error("Failed to write gmail token to Firestore:", dbErr);
+        }
+
         if (cuetStatus === 'finished' && cuetResult) {
           sendResultEmail(credential.accessToken, cuetResult);
         }
@@ -2926,7 +3399,7 @@ const CUETExamView = ({
   }, [cuetQuestions]);
 
   const updateStatus = (index: number, status: any) => {
-      setCuetStatusMap({ ...cuetStatusMap, [index]: status });
+      setCuetStatusMap((prev: any) => ({ ...prev, [index]: status }));
   };
 
   const handleFinishExam = () => {
@@ -2938,7 +3411,8 @@ const CUETExamView = ({
     // NEET Marking: +4, -1, 0
     // CUET Marking: +5, -1, 0
     // NEST Marking: +3, -1, 0
-    const correctScore = examType === 'neet' ? 4 : examType === 'nest' ? 3 : 5;
+    // JIPMAT Marking: +4, -1, 0
+    const correctScore = examType === 'neet' ? 4 : examType === 'jipmat' ? 4 : examType === 'nest' ? 3 : 5;
     const incorrectPenalty = 1;
 
     const detailedResults = cuetQuestions.map((q: any, idx: number) => {
@@ -2987,20 +3461,20 @@ const CUETExamView = ({
           </p>
         </div>
 
-        {/* 3-Column Exams Grid */}
-        <div className="max-w-6xl w-full grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
+        {/* 4-Column Exams Grid */}
+        <div className="max-w-7xl w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
           <motion.button 
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={() => { setExamType('cuet'); setCuetStatus('upload'); }}
-            className="bg-white p-8 sm:p-12 rounded-[40px] text-center space-y-6 shadow-2xl border-4 border-transparent hover:border-blue-500 transition-all flex flex-col justify-between items-center"
+            className="bg-white p-8 rounded-[40px] text-center space-y-6 shadow-2xl border-4 border-transparent hover:border-blue-500 transition-all flex flex-col justify-between items-center"
           >
-            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-blue-100 rounded-3xl flex items-center justify-center">
-              <GraduationCap className="w-8 h-8 sm:w-10 sm:h-10 text-blue-600" />
+            <div className="w-16 h-16 bg-blue-100 rounded-3xl flex items-center justify-center">
+              <GraduationCap className="w-8 h-8 text-blue-600" />
             </div>
             <div>
-              <h3 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tighter">CUET 2026</h3>
-              <p className="text-slate-500 font-bold uppercase text-[10px] sm:text-xs mt-2 tracking-widest">Common University Entrance Test</p>
+              <h3 className="text-2xl font-black text-slate-900 tracking-tighter">CUET 2026</h3>
+              <p className="text-slate-500 font-bold uppercase text-[10px] mt-2 tracking-widest">Common University Entrance Test</p>
             </div>
           </motion.button>
 
@@ -3008,14 +3482,14 @@ const CUETExamView = ({
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={() => { setExamType('neet'); setCuetStatus('upload'); }}
-            className="bg-white p-8 sm:p-12 rounded-[40px] text-center space-y-6 shadow-2xl border-4 border-transparent hover:border-red-500 transition-all flex flex-col justify-between items-center"
+            className="bg-white p-8 rounded-[40px] text-center space-y-6 shadow-2xl border-4 border-transparent hover:border-red-500 transition-all flex flex-col justify-between items-center"
           >
-            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-red-100 rounded-3xl flex items-center justify-center">
-              <TrendingUp className="w-8 h-8 sm:w-10 sm:h-10 text-red-600" />
+            <div className="w-16 h-16 bg-red-100 rounded-3xl flex items-center justify-center">
+              <TrendingUp className="w-8 h-8 text-red-600" />
             </div>
             <div>
-              <h3 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tighter">NEET UG</h3>
-              <p className="text-slate-500 font-bold uppercase text-[10px] sm:text-xs mt-2 tracking-widest">National Eligibility cum Entrance Test</p>
+              <h3 className="text-2xl font-black text-slate-900 tracking-tighter">NEET UG</h3>
+              <p className="text-slate-500 font-bold uppercase text-[10px] mt-2 tracking-widest">National Eligibility cum Entrance Test</p>
             </div>
           </motion.button>
 
@@ -3023,72 +3497,31 @@ const CUETExamView = ({
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={() => { setExamType('nest'); setCuetStatus('upload'); }}
-            className="bg-white p-8 sm:p-12 rounded-[40px] text-center space-y-6 shadow-2xl border-4 border-transparent hover:border-emerald-500 transition-all flex flex-col justify-between items-center"
+            className="bg-white p-8 rounded-[40px] text-center space-y-6 shadow-2xl border-4 border-transparent hover:border-emerald-500 transition-all flex flex-col justify-between items-center"
           >
-            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-emerald-100 rounded-3xl flex items-center justify-center">
-              <Monitor className="w-8 h-8 sm:w-10 sm:h-10 text-emerald-600" />
+            <div className="w-16 h-16 bg-emerald-100 rounded-3xl flex items-center justify-center">
+              <Monitor className="w-8 h-8 text-emerald-600" />
             </div>
             <div>
-              <h3 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tighter">NEST Exam</h3>
-              <p className="text-slate-500 font-bold uppercase text-[10px] sm:text-xs mt-2 tracking-widest">National Entrance Screening Test</p>
+              <h3 className="text-2xl font-black text-slate-900 tracking-tighter">NEST Exam</h3>
+              <p className="text-slate-500 font-bold uppercase text-[10px] mt-2 tracking-widest">National Entrance Screening Test</p>
             </div>
           </motion.button>
-        </div>
 
-        {/* Custom Auto Gmail Authorization Card */}
-        <div className="max-w-4xl w-full bg-slate-800/60 border border-slate-700/60 p-6 sm:p-8 rounded-[32px] shadow-xl flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="flex flex-col sm:flex-row items-center sm:items-start text-center sm:text-left gap-4">
-            <div className="w-12 h-12 bg-indigo-500/10 border border-indigo-400/20 rounded-2xl flex items-center justify-center shrink-0">
-              <Mail className="w-6 h-6 text-indigo-400" />
+          <motion.button 
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => { setExamType('jipmat'); setCuetStatus('upload'); }}
+            className="bg-white p-8 rounded-[40px] text-center space-y-6 shadow-2xl border-4 border-transparent hover:border-orange-500 transition-all flex flex-col justify-between items-center"
+          >
+            <div className="w-16 h-16 bg-orange-100 rounded-3xl flex items-center justify-center">
+              <Zap className="w-8 h-8 text-orange-600" />
             </div>
-            <div className="space-y-1">
-              <span className="text-[9px] font-black uppercase text-indigo-400 tracking-widest block">Automated Dispatch Registration</span>
-              <h4 className="text-lg font-black text-white tracking-tight">Configure Automatic Gmail Reports</h4>
-              <p className="text-xs text-slate-400 leading-relaxed max-w-xl">
-                Authorize your Google account to automatically dispatch your comprehensive A-Z scorecard, performance metrics, and subject analysis to <strong className="text-slate-200">jitendrakumart557@gmail.com</strong> and <strong className="text-slate-200">pt617339@gmail.com</strong> right after final submission.
-              </p>
-              {gmailAuthError && (
-                <div id="gmail-bypass-guide-card" className="mt-4 bg-red-950/40 border border-red-500/30 rounded-2xl p-4 sm:p-5 text-left space-y-2">
-                  <div className="flex items-center gap-2 text-red-400 font-bold">
-                    <AlertTriangle className="w-4 h-4 shrink-0" />
-                    <span className="text-xs uppercase tracking-wider font-extrabold">How to bypass Google's "App Not Verified" warning:</span>
-                  </div>
-                  <p className="text-slate-300 leading-relaxed text-[11px]">
-                    Since this is a custom sandbox development portal built specifically for your mock practices, Google flags it as unverified. This is completely safe to bypass:
-                  </p>
-                  <ol className="list-decimal pl-4 space-y-1.5 text-slate-300 text-[11px] font-medium">
-                    <li>Click <strong className="text-white underline">"Advanced"</strong> or <strong className="text-white">"Advanced settings"</strong> on Google's warning window.</li>
-                    <li>Click the link that says <strong className="text-indigo-300 hover:underline">"Go to react-example (unsafe)"</strong> (this is this applet's identifier).</li>
-                    <li>Make sure to select/trust the option to allow the application to send emails on your behalf, then click <strong className="text-white">"Continue / Accept"</strong>.</li>
-                  </ol>
-                </div>
-              )}
+            <div>
+              <h3 className="text-2xl font-black text-slate-900 tracking-tighter">JIPMAT</h3>
+              <p className="text-slate-500 font-bold uppercase text-[10px] mt-2 tracking-widest">Joint Integrated Programme in Management</p>
             </div>
-          </div>
-          <div className="shrink-0 w-full md:w-auto flex justify-center">
-            {!gmailToken ? (
-              <button 
-                onClick={handleGoogleSignIn}
-                className="w-full md:w-auto bg-white hover:bg-slate-100 text-slate-900 transition-all rounded-2xl py-3 px-5 font-black text-xs flex items-center justify-center gap-2.5 shadow-md active:scale-98 cursor-pointer"
-              >
-                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v3.9h6.6c-.28 1.5-1.12 2.77-2.38 3.63v3.02h3.85c2.25-2.07 3.67-5.11 3.67-8.48z" />
-                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.85-3.02c-1.07.72-2.44 1.16-4.08 1.16-3.14 0-5.8-2.12-6.75-4.97H1.12v3.12C3.1 21.36 7.28 24 12 24z" />
-                  <path fill="#FBBC05" d="M5.25 14.26a7.22 7.22 0 0 1 0-4.52V6.62H1.12a11.96 11.96 0 0 0 0 10.76l4.13-3.12z" />
-                  <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.43-3.43C17.93 1.19 15.24 0 12 0 7.28 0 3.1 2.64 1.12 6.62l4.13 3.12c.95-2.85 3.61-4.99 6.75-4.99z" />
-                </svg>
-                Authorize Gmail Account
-              </button>
-            ) : (
-              <div className="bg-emerald-500/10 border border-emerald-500/20 py-3 px-5 rounded-2xl flex items-center justify-center gap-2.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <div className="text-left">
-                  <p className="text-[9px] font-black text-emerald-400 uppercase tracking-widest leading-none mb-0.5">Integration Authorized</p>
-                  <p className="text-xs font-bold text-slate-200 truncate max-w-[150px] leading-none">{gmailUserEmail}</p>
-                </div>
-              </div>
-            )}
-          </div>
+          </motion.button>
         </div>
       </div>
     );
@@ -3109,51 +3542,6 @@ const CUETExamView = ({
     const statToCapital = (str: string) => {
       if (!str) return "General";
       return str.charAt(0).toUpperCase() + str.slice(1);
-    };
-
-    // Helper to get estimated selection chances and suggestions
-    const getNestEstimation = (score: number) => {
-      if (score >= 115) {
-        return {
-          percentile: "99.5+",
-          chanceGen: "Excellent (Top Ranks)",
-          chanceEws: "Guaranteed Selection",
-          suggestion: "Outstanding performance! You are on track for a top merit rank at NISER/UM-DAE CEBS. Keep polishing your time management and stay calm on the actual exam day to lock in your top position.",
-          badgeColor: [34, 197, 94] // Emerald
-        };
-      } else if (score >= 95) {
-        return {
-          percentile: "98.5 - 99.4",
-          chanceGen: "Very High Chance",
-          chanceEws: "Very High Chance",
-          suggestion: "Excellent score! Your grasp over the syllabus is highly competitive. Focus on analyzing your minor error patterns and reducing silly mistakes to secure a solid rank.",
-          badgeColor: [132, 204, 22] // Light green
-        };
-      } else if (score >= 80) {
-        return {
-          percentile: "96.0 - 98.4",
-          chanceGen: "Borderline / Moderate",
-          chanceEws: "Good Chance",
-          suggestion: "Decent score, but on the borderline of the general category cutoff. To be safe, focus on error analysis of your weaker topics and solve more timed mock tests.",
-          badgeColor: [234, 179, 8] // Yellow
-        };
-      } else if (score >= 65) {
-        return {
-          percentile: "90.0 - 95.9",
-          chanceGen: "Low Chance",
-          chanceEws: "Borderline",
-          suggestion: "Your concepts are moderately clear, but your speed and accuracy require reinforcement. Focus on revising high-weightage chapters and avoid guessing answers to save negative marking.",
-          badgeColor: [249, 115, 22] // Orange
-        };
-      } else {
-        return {
-          percentile: "Below 90",
-          chanceGen: "Very Low",
-          chanceEws: "Low",
-          suggestion: "Extensive study and foundational revision are needed across all subjects. Make a strict study plan, focus heavily on textbook key exercises, and avoid guessing since negative marks (-1) damage your rank.",
-          badgeColor: [239, 68, 68] // Red
-        };
-      }
     };
 
     // Helper to convert SVG to image
@@ -3203,7 +3591,7 @@ const CUETExamView = ({
       });
     };
 
-    if (examType === 'nest') {
+    if (examType === 'nest' || examType === 'jipmat') {
       // OVERVIEW PAGE (Page 1)
       let y = 15;
 
@@ -3214,11 +3602,17 @@ const CUETExamView = ({
       doc.setFont("helvetica", "bold");
       doc.setFontSize(20);
       doc.setTextColor(255, 255, 255);
-      doc.text("NEST 2026 PRACTICE PORTAL", pageWidth / 2, 16, { align: 'center' });
-      
-      doc.setFontSize(11);
-      doc.setTextColor(147, 197, 253);
-      doc.text("NATIONAL ENTRANCE SCREENING TEST - OFFICIAL PERFORMANCE REPORT", pageWidth / 2, 25, { align: 'center' });
+      if (examType === 'jipmat') {
+        doc.text("JIPMAT CBT TEST SIMULATOR", pageWidth / 2, 16, { align: 'center' });
+        doc.setFontSize(11);
+        doc.setTextColor(249, 115, 22); // Orange
+        doc.text("JIPMAT INTEGRATED MANAGEMENT ADMISSION TEST - PERFORMANCE REPORT", pageWidth / 2, 25, { align: 'center' });
+      } else {
+        doc.text("NEST 2026 PRACTICE PORTAL", pageWidth / 2, 16, { align: 'center' });
+        doc.setFontSize(11);
+        doc.setTextColor(147, 197, 253);
+        doc.text("NATIONAL ENTRANCE SCREENING TEST - OFFICIAL PERFORMANCE REPORT", pageWidth / 2, 25, { align: 'center' });
+      }
 
       doc.setFontSize(8);
       doc.setFont("helvetica", "italic");
@@ -3330,7 +3724,7 @@ const CUETExamView = ({
       doc.setFont("helvetica", "bold");
       doc.setFontSize(9.5);
       doc.setTextColor(15, 23, 42);
-      doc.text("SUBJECT-WISE PERFORMANCE MATRIX (+3 Correct / -1 Penalty / 0 Left)", 15, y);
+      doc.text(`SUBJECT-WISE PERFORMANCE MATRIX (+${examType === 'jipmat' ? 4 : 3} Correct / -1 Penalty / 0 Left)`, 15, y);
 
       y += 4;
       // Drawing table
@@ -3342,14 +3736,16 @@ const CUETExamView = ({
       doc.setFont("helvetica", "bold");
       doc.text("Subject Section", 18, y + 5);
       doc.text("Total Qs", 58, y + 5);
-      doc.text("Correct (+3)", 78, y + 5);
+      doc.text(`Correct (+${examType === 'jipmat' ? 4 : 3})`, 78, y + 5);
       doc.text("Incorrect (-1)", 100, y + 5);
       doc.text("Left (0)", 125, y + 5);
       doc.text("Sec Marks", 143, y + 5);
       doc.text("Est. Time Taken", 161, y + 5);
       doc.text("Accuracy", 184, y + 5);
 
-      const subjectsList = ['Biology', 'Chemistry', 'Physics'];
+      const subjectsList = examType === 'jipmat'
+        ? ['Quantitative Aptitude (QA)', 'Data Interpretation & Logical Reasoning (DILR)', 'Verbal Ability & Reading Comprehension (VARC)']
+        : ['Biology', 'Chemistry', 'Physics'];
       let rowY = y + 7;
 
       const detailsList = cuetResult?.details || [];
@@ -3359,8 +3755,9 @@ const CUETExamView = ({
         const subIncorrect = subQuestions.filter((q: any) => q.selectedIdx !== -1 && !q.isCorrect).length;
         const subLeft = subQuestions.filter((q: any) => q.selectedIdx === -1).length;
         const subTotalIn = subQuestions.length || 20;
-        const subScoreVal = subCorrect * 3 - subIncorrect;
-        const subMaxVal = subTotalIn * 3;
+        const schemeMul = examType === 'jipmat' ? 4 : 3;
+        const subScoreVal = subCorrect * schemeMul - subIncorrect;
+        const subMaxVal = subTotalIn * schemeMul;
         const subAccuracyVal = (subCorrect + subIncorrect) > 0 ? ((subCorrect / (subCorrect + subIncorrect)) * 100).toFixed(1) + "%" : "0.0%";
         
         // Estimated section time
@@ -3818,27 +4215,41 @@ const CUETExamView = ({
           const newAns = { ...cuetAnswers };
           delete newAns[activeQuestion];
           setCuetAnswers(newAns);
-          updateStatus(activeQuestion, 'not-answered');
+          
+          setCuetStatusMap((prev: any) => {
+              const updated = { ...prev, [activeQuestion]: 'not-answered' };
+              return updated;
+          });
           return;
       }
 
+      let targetStatus: 'answered' | 'marked' | 'answered-marked' | 'not-answered' = 'not-answered';
       if (action === 'save') {
           if (currentAns === undefined) { alert("Please select an answer first."); return; }
-          updateStatus(activeQuestion, 'answered');
+          targetStatus = 'answered';
       } else if (action === 'mark') {
-          updateStatus(activeQuestion, 'marked');
+          targetStatus = 'marked';
       } else if (action === 'save-mark') {
           if (currentAns === undefined) { alert("Please select an answer first."); return; }
-          updateStatus(activeQuestion, 'answered-marked');
+          targetStatus = 'answered-marked';
       }
+
+      setCuetStatusMap((prev: any) => {
+          const updated = { ...prev, [activeQuestion]: targetStatus };
+          
+          if (activeQuestion < cuetQuestions.length - 1) {
+              const nextQ = activeQuestion + 1;
+              if ((prev[nextQ] || 'not-visited') === 'not-visited') {
+                  updated[nextQ] = 'not-answered';
+              }
+          }
+          return updated;
+      });
 
       // Move to next
       if (activeQuestion < cuetQuestions.length - 1) {
           const nextQ = activeQuestion + 1;
           setActiveQuestion(nextQ);
-          if (cuetStatusMap[nextQ] === 'not-visited') {
-              updateStatus(nextQ, 'not-answered');
-          }
           // If we switch subjects automatically when moving next
           const nextSubject = cuetQuestions[nextQ].subject;
           if (nextSubject && nextSubject !== activeNeetSubject) {
@@ -3911,13 +4322,169 @@ const CUETExamView = ({
             type="text" value={unlockCode} onChange={(e) => setUnlockCode(e.target.value)}
             placeholder="PROCTOR KEY" className="w-full bg-slate-100 border border-slate-200 rounded-xl px-4 py-3 text-center font-bold text-slate-900 uppercase tracking-widest outline-none"
           />
-          <button onClick={() => unlockCode === 'DDYY22' ? (setCuetIsLocked(false), setCuetStatus('exam')) : alert('Invalid key. Contact proctor.')} className="w-full bg-red-600 text-white font-black py-3 rounded-xl uppercase tracking-tighter">Enter Exam Hall</button>
+          <button onClick={() => {
+            if (unlockCode === 'DDYY22') {
+              setCuetIsLocked(false);
+              setCuetStatus('exam');
+              requestFullscreen();
+            } else {
+              alert('Invalid key. Contact proctor.');
+            }
+          }} className="w-full bg-red-600 text-white font-black py-3 rounded-xl uppercase tracking-tighter">Enter Exam Hall</button>
         </motion.div>
       </div>
     );
   }
 
   if (cuetStatus === 'upload') {
+    if (examType === 'jipmat') {
+      return (
+        <div className="max-w-4xl mx-auto py-12 space-y-8 px-4">
+          <div className="text-center space-y-4">
+            <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase font-orbitron">JIPMAT 2026 ONLINE SIMULATOR</h2>
+            <p className="text-orange-600 font-bold text-xs tracking-widest uppercase font-mono">Joint Integrated Programme in Management Admission Test</p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {(['Quantitative Aptitude (QA)', 'Data Interpretation & Logical Reasoning (DILR)', 'Verbal Ability & Reading Comprehension (VARC)'] as const).map(sub => {
+              const method = jipmatUploadMethods[sub] || 'text';
+              const file = jipmatFiles[sub];
+              const targetCount = sub.includes('VARC') ? 34 : 33;
+              return (
+                <div key={sub} className="bg-white p-6 rounded-3xl border border-slate-200/80 space-y-4 shadow-xl flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <h3 className="font-orbitron font-black text-[11px] text-slate-800 uppercase tracking-wider">{sub}</h3>
+                    
+                    {/* Tab selection */}
+                    <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200/50">
+                      <button
+                        onClick={() => setJipmatUploadMethods({...jipmatUploadMethods, [sub]: 'text'})}
+                        className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded-lg transition-all ${
+                          method === 'text' 
+                            ? 'bg-orange-600 text-white shadow-xs' 
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        Paste Text
+                      </button>
+                      <button
+                        onClick={() => setJipmatUploadMethods({...jipmatUploadMethods, [sub]: 'file'})}
+                        className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded-lg transition-all ${
+                          method === 'file' 
+                            ? 'bg-orange-600 text-white shadow-xs' 
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        Upload File
+                      </button>
+                    </div>
+
+                    {method === 'text' ? (
+                      <textarea 
+                        value={jipmatPastedTexts[sub] || ''}
+                        onChange={(e) => setJipmatPastedTexts({...jipmatPastedTexts, [sub]: e.target.value})}
+                        placeholder={`Paste questions with 4 options for ${sub}...`}
+                        className="w-full h-40 p-3 bg-slate-50 border rounded-2xl text-xs font-mono outline-none focus:border-orange-500 transition-all leading-relaxed resize-none"
+                      />
+                    ) : (
+                      <div 
+                        onClick={() => document.getElementById(`jipmat-file-${sub}`)?.click()}
+                        className={`border-2 border-dashed rounded-2xl p-4 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[160px] ${
+                          file 
+                            ? 'border-orange-500 bg-orange-50/10' 
+                            : 'border-slate-200 bg-slate-50 hover:bg-slate-100/50 hover:border-slate-400'
+                        }`}
+                      >
+                        <input 
+                          id={`jipmat-file-${sub}`}
+                          type="file" 
+                          accept="application/pdf,image/*"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) setJipmatFiles({...jipmatFiles, [sub]: f});
+                          }}
+                          className="hidden" 
+                        />
+                        {file ? (
+                          <div className="space-y-1">
+                            <FileText className="w-6 h-6 text-orange-500 mx-auto" />
+                            <p className="text-[10px] font-black text-slate-800 truncate max-w-[140px] mx-auto">{file.name}</p>
+                            <p className="text-[8px] text-slate-400 font-bold uppercase">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
+                            <span className="inline-block text-[7px] bg-slate-100 text-slate-600 font-bold px-1.5 py-0.5 rounded-md uppercase">Click to replace</span>
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <FileText className="w-6 h-6 text-slate-400 mx-auto" />
+                            <p className="text-[10px] font-bold text-slate-700">Choose PDF or Image</p>
+                            <p className="text-[8px] text-slate-400">Click or Drag & Drop</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-3 mt-4">
+                    <button 
+                      onClick={() => {
+                        if (method === 'text') {
+                          handleJipmatTextUpload(sub, jipmatPastedTexts[sub]);
+                        } else {
+                          if (file) {
+                            handleJipmatFileUpload(sub, file);
+                          } else {
+                            alert('Please select a PDF or Image file first.');
+                          }
+                        }
+                      }}
+                      disabled={isAiLoading || (method === 'text' ? !jipmatPastedTexts[sub]?.trim() : !file)}
+                      className="w-full bg-orange-600 text-white py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-orange-700 disabled:opacity-50 transition-colors"
+                    >
+                      {isAiLoading ? 'Analyzing...' : `Extract ${sub}`}
+                    </button>
+                    <div className="text-center">
+                      <p className="text-[10px] font-bold text-slate-400">
+                        {jipmatData[sub]?.length || 0} / {targetCount} Qs Ready
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200">
+            <h4 className="text-xs font-black text-slate-500 uppercase tracking-wider mb-2 font-bold">DYNAMIC EXAM PARAMETERS</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="bg-white p-4 rounded-xl border border-slate-200">
+                <span className="text-[9px] font-black text-slate-400 uppercase font-bold">Uploaded Sections</span>
+                <p className="text-sm font-black text-slate-800 tracking-tight">
+                  {['Quantitative Aptitude (QA)', 'Data Interpretation & Logical Reasoning (DILR)', 'Verbal Ability & Reading Comprehension (VARC)'].filter(sub => (jipmatData[sub]?.length || 0) > 0).join(', ') || 'No sections ready'}
+                </p>
+              </div>
+              <div className="bg-white p-4 rounded-xl border border-slate-200">
+                <span className="text-[9px] font-black text-slate-400 uppercase font-bold">Target Pattern & Timing</span>
+                <p className="text-xs font-bold text-orange-600 uppercase tracking-tight">
+                  100 Multiple Choice Questions | 150 Minutes (2h 30m)
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <button 
+            onClick={startJipmatSimulation}
+            className="w-full bg-orange-600 text-white font-black py-6 rounded-[30px] uppercase text-xl sm:text-2xl shadow-2xl hover:bg-orange-700 transition-all flex items-center justify-center gap-4 hover:shadow-orange-500/10 active:scale-[0.99]"
+          >
+            <Zap className="w-8 h-8" />
+            INITIALIZE JIPMAT TEST
+          </button>
+          
+          <div className="text-center">
+            <button onClick={() => setCuetStatus('selection')} className="text-slate-400 font-bold text-xs uppercase underline hover:text-slate-900 transition-all">Back to Selection</button>
+          </div>
+        </div>
+      );
+    }
+
     if (examType === 'nest') {
       return (
         <div className="max-w-4xl mx-auto py-12 space-y-8 px-4">
@@ -4452,38 +5019,84 @@ const CUETExamView = ({
                 </div>
               )}
 
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                  <User className="w-4 h-4" />
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Candidate Name</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                    <User className="w-4 h-4" />
+                  </div>
+                  <input 
+                    type="text" 
+                    value={nestCandidateName}
+                    onChange={(e) => { setNestCandidateName(e.target.value); setLoginError(''); }}
+                    placeholder="Enter Candidate Name" 
+                    className="w-full bg-white border border-slate-300 rounded pl-10 pr-4 py-2.5 text-sm font-bold text-slate-800 outline-none focus:ring-1 focus:ring-[#46b8da] focus:border-[#46b8da] transition-all"
+                  />
                 </div>
-                <input 
-                  type="text" 
-                  value={nestUserId}
-                  onFocus={() => { setActiveInput('id'); setKeyboardActive(true); }}
-                  onChange={(e) => { setNestUserId(e.target.value); setLoginError(''); }}
-                  placeholder="Roll No. or Login ID" 
-                  className="w-full bg-white border border-slate-300 rounded pl-10 pr-4 py-2.5 text-sm font-bold text-slate-800 outline-none focus:ring-1 focus:ring-[#46b8da] focus:border-[#46b8da] transition-all"
-                />
               </div>
 
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                  <Lock className="w-4 h-4" />
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Candidate Email</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                    <Mail className="w-4 h-4" />
+                  </div>
+                  <input 
+                    type="email" 
+                    value={nestCandidateEmail}
+                    onChange={(e) => { setNestCandidateEmail(e.target.value); setLoginError(''); }}
+                    placeholder="Enter Candidate Email Address" 
+                    className="w-full bg-white border border-slate-300 rounded pl-10 pr-4 py-2.5 text-sm font-bold text-slate-800 outline-none focus:ring-1 focus:ring-[#46b8da] focus:border-[#46b8da] transition-all"
+                  />
                 </div>
-                <input 
-                  type="password" 
-                  value={nestPassword}
-                  onFocus={() => { setActiveInput('password'); setKeyboardActive(true); }}
-                  onChange={(e) => { setNestPassword(e.target.value); setLoginError(''); }}
-                  placeholder="Password" 
-                  className="w-full bg-white border border-slate-300 rounded pl-10 pr-4 py-2.5 text-sm font-bold text-slate-800 outline-none focus:ring-1 focus:ring-[#46b8da] focus:border-[#46b8da] transition-all"
-                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Roll No. / Login ID Center</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                    <User className="w-4 h-4" />
+                  </div>
+                  <input 
+                    type="text" 
+                    value={nestUserId}
+                    onFocus={() => { setActiveInput('id'); setKeyboardActive(true); }}
+                    onChange={(e) => { setNestUserId(e.target.value); setLoginError(''); }}
+                    placeholder="Roll No. or Login ID" 
+                    className="w-full bg-white border border-slate-300 rounded pl-10 pr-4 py-2.5 text-sm font-bold text-slate-800 outline-none focus:ring-1 focus:ring-[#46b8da] focus:border-[#46b8da] transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Password (Required: P@llavi76)</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <input 
+                    type="password" 
+                    value={nestPassword}
+                    onFocus={() => { setActiveInput('password'); setKeyboardActive(true); }}
+                    onChange={(e) => { setNestPassword(e.target.value); setLoginError(''); }}
+                    placeholder="Password" 
+                    className="w-full bg-white border border-slate-300 rounded pl-10 pr-4 py-2.5 text-sm font-bold text-slate-800 outline-none focus:ring-1 focus:ring-[#46b8da] focus:border-[#46b8da] transition-all"
+                  />
+                </div>
               </div>
 
               <button 
                 onClick={() => {
                   if (nestPassword !== 'P@llavi76') {
                     setLoginError("Invalid password. Please use correct password: P@llavi76");
+                    return;
+                  }
+                  if (!nestCandidateName.trim()) {
+                    setLoginError("Please enter candidate name.");
+                    return;
+                  }
+                  if (!nestCandidateEmail.trim() || !nestCandidateEmail.includes('@')) {
+                    setLoginError("Please enter a valid candidate email address.");
                     return;
                   }
                   setLoginError('');
@@ -4763,6 +5376,7 @@ const CUETExamView = ({
               initialMap[0] = 'not-answered';
               setCuetStatusMap(initialMap);
               setActiveQuestion(0);
+              requestFullscreen();
             }} 
             className="bg-[#5cb85c] hover:bg-green-700 text-white font-black text-xs uppercase px-5 py-2.5 rounded tracking-wider shadow-md transition-all active:scale-[0.98]"
           >
@@ -4798,7 +5412,15 @@ const CUETExamView = ({
                 </div>
             </div>
 
-            <button onClick={() => setCuetStatus('exam')} className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl uppercase tracking-tighter text-xl shadow-xl hover:bg-black transition-all">Begin Examination</button>
+            <button 
+              onClick={() => {
+                setCuetStatus('exam');
+                requestFullscreen();
+              }} 
+              className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl uppercase tracking-tighter text-xl shadow-xl hover:bg-black transition-all"
+            >
+              Begin Examination
+            </button>
             <div className="text-center">
                 <button onClick={() => setCuetStatus('upload')} className="text-slate-400 font-bold text-[10px] uppercase hover:text-slate-900 transition-all underline underline-offset-4">Change Question Paper</button>
             </div>
@@ -4808,6 +5430,43 @@ const CUETExamView = ({
   }
 
   if (cuetStatus === 'exam') {
+    if (isFullscreenSupported && !isFullscreenActive) {
+      return (
+        <div id="fullscreen-lockout-overlay" className="fixed inset-0 z-[1000] bg-slate-900 flex flex-col items-center justify-center p-6 text-center select-none">
+          <div className="max-w-md w-full bg-slate-800 border border-slate-700 p-8 rounded-3xl shadow-2xl space-y-6">
+            <div className="relative mx-auto w-16 h-16 flex items-center justify-center bg-amber-500/10 border border-amber-500/30 rounded-full text-amber-500 animate-pulse">
+              <AlertTriangle className="w-8 h-8 animate-bounce" />
+            </div>
+
+            <div className="space-y-2">
+              <h2 className="text-lg font-black text-white uppercase tracking-tight">Full Screen Mode Required</h2>
+              <p className="text-slate-300 text-[11px] leading-relaxed">
+                This simulated examination requires continuous fullscreen block to mimic real physical centers.
+                Address bar, tab switching tools, and home gestures are fully locked out in this layer.
+              </p>
+            </div>
+
+            <div className="bg-amber-950/20 border border-amber-500/20 text-amber-400 p-4 rounded-2xl text-[10px] leading-relaxed font-bold uppercase text-left">
+              ⚠️ PROCTOR RULES FOR CANDIDATE (PALLAVI):<br/>
+              • DO NOT use phone gestures or physical back buttons.<br/>
+              • DO NOT pull down the notifications bar or trigger multi-tasking.<br/>
+              • Closing this window or changing tabs terminates the exam.
+            </div>
+
+            <button 
+              onClick={requestFullscreen}
+              className="w-full bg-[#185adb] hover:bg-indigo-700 text-white font-black py-4 rounded-xl uppercase tracking-wider text-xs transition-all focus:outline-none shadow-lg scale-100 hover:scale-[1.02] active:scale-[0.98]"
+            >
+              Resume Exam in Full Screen
+            </button>
+            <p className="text-[10px] text-slate-500">
+              Exam Guard Active | Sec ID: CUET2026-X7Y
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     const currentQ = cuetQuestions[activeQuestion];
     const formatTime = (s: number) => {
         const h = Math.floor(s/3600);
@@ -4817,12 +5476,15 @@ const CUETExamView = ({
     };
 
     // Subject filtering for Navigation Palette
-    const subjects = examType === 'nest'
-        ? ['Biology', 'Chemistry', 'Physics'].filter((sub: string) => cuetQuestions.some((q: any) => q.subject === sub))
+    const subjects = (examType === 'nest' || examType === 'jipmat')
+        ? (examType === 'jipmat'
+            ? ['Quantitative Aptitude (QA)', 'Data Interpretation & Logical Reasoning (DILR)', 'Verbal Ability & Reading Comprehension (VARC)']
+            : ['Biology', 'Chemistry', 'Physics']
+          ).filter((sub: string) => cuetQuestions.some((q: any) => q.subject === sub))
         : examType === 'neet' 
         ? ['Physics', 'Chemistry', 'Biology'] 
         : ['General Test'];
-    const filteredQuestions = (examType === 'neet' || examType === 'nest')
+    const filteredQuestions = (examType === 'neet' || examType === 'nest' || examType === 'jipmat')
         ? cuetQuestions.map((q: any, i: number) => ({...q, originalIndex: i})).filter((q: any) => q.subject === activeNeetSubject)
         : cuetQuestions.map((q: any, i: number) => ({...q, originalIndex: i}));
 
@@ -4850,19 +5512,19 @@ const CUETExamView = ({
         'answered-marked': Object.values(cuetStatusMap).filter(v => v === 'answered-marked').length,
     };
 
-    if (examType === 'nest') {
+    if (examType === 'nest' || examType === 'jipmat') {
       const currentAns = cuetAnswers[activeQuestion];
       return (
         <div key="nest-exam-container" className="fixed inset-0 bg-[#f4f7f9] text-slate-850 z-[90] flex flex-col font-sans select-none overflow-hidden">
           {/* Header Bar (TCS iON Custom High Fidelity Style) */}
           <header id="nest-header" className="h-[65px] bg-[#1e2833] text-white flex justify-between items-center px-4 sm:px-6 shrink-0 z-50 shadow-md border-b border-slate-900">
             <div className="flex items-center gap-3">
-              <div className="bg-[#2f71b9] p-2 rounded">
+              <div className={`${examType === 'jipmat' ? 'bg-[#ea580c]' : 'bg-[#2f71b9]'} p-2 rounded`}>
                 <Monitor className="w-5 h-5 text-white animate-pulse" />
               </div>
               <div className="text-left">
                 <h1 id="nest-title" className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-100">
-                  NEST 2026 ONLINE SIMULATOR
+                  {examType === 'jipmat' ? 'JIPMAT 2026 ONLINE SIMULATOR' : 'NEST 2026 ONLINE SIMULATOR'}
                 </h1>
                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">TCS iON Assessment Systems</p>
               </div>
@@ -4881,7 +5543,7 @@ const CUETExamView = ({
           </header>
 
           {/* Section Selector Custom Bar */}
-          <div id="nest-section-bar" className="bg-[#2f71b9] px-4 py-1.5 flex items-center justify-between border-b border-[#245994] shadow-inner shrink-0 text-white">
+          <div id="nest-section-bar" className={`${examType === 'jipmat' ? 'bg-[#ea580c] border-[#c2410c]' : 'bg-[#2f71b9] border-[#245994]'} px-4 py-1.5 flex items-center justify-between border-b shadow-inner shrink-0 text-white`}>
             <div className="flex gap-1.5">
               {subjects.map(sub => (
                 <button
@@ -4892,7 +5554,7 @@ const CUETExamView = ({
                     const firstInSub = cuetQuestions.findIndex((q: any) => q.subject === sub);
                     if (firstInSub !== -1) setActiveQuestion(firstInSub);
                   }}
-                  className={`${activeNeetSubject === sub ? 'bg-white text-blue-900 font-extrabold border-b-2 border-orange-500 shadow-md' : 'bg-white/10 text-white/95 hover:bg-white/20'} px-5 py-2 rounded-md font-black text-[11px] uppercase tracking-wide transition-all`}
+                  className={`${activeNeetSubject === sub ? `bg-white ${examType === 'jipmat' ? 'text-orange-950 border-orange-600' : 'text-blue-900 border-orange-500'} font-extrabold border-b-2 shadow-md` : 'bg-white/10 text-white/95 hover:bg-white/20'} px-5 py-2 rounded-md font-black text-[11px] uppercase tracking-wide transition-all`}
                 >
                   {sub}
                 </button>
@@ -5536,7 +6198,7 @@ const CUETExamView = ({
             <div className="text-center border-r pr-4 sm:pr-6">
                 <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Subject Name</p>
                 <p className="text-xs font-black text-blue-600 uppercase tracking-tight">
-                  {examType === 'neet' ? 'NEET UG 2026' : examType === 'nest' ? 'NEST Exam 2026' : 'CUET 2026'}
+                  {examType === 'neet' ? 'NEET UG 2026' : examType === 'jipmat' ? 'JIPMAT 2026' : examType === 'nest' ? 'NEST Exam 2026' : 'CUET 2026'}
                 </p>
             </div>
             <div className="text-center">
@@ -5746,81 +6408,6 @@ const CUETExamView = ({
                              <p className="text-2xl font-black text-slate-700">{cuetResult?.unattempted}</p>
                         </div>
                     </div>
-                </div>
-                <div className="bg-slate-50 border border-slate-200/60 p-6 rounded-[32px] text-left space-y-4 shadow-sm">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-indigo-100 rounded-2xl flex items-center justify-center">
-                      <Mail className="w-5 h-5 text-indigo-600" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight">Auto-Email Report Integration</h4>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Configured by Shubhjeet Ram Tripathi</p>
-                    </div>
-                  </div>
-
-                  {emailSentStatus === 'success' && (
-                    <div className="bg-green-50 border border-green-200 p-4 rounded-2xl space-y-1">
-                      <p className="text-xs font-bold text-green-800 flex items-center gap-1.5">
-                        <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
-                        Report successfully emailed!
-                      </p>
-                      <p className="text-[11px] text-green-700 leading-relaxed">
-                        A fully detailed A-Z assessment scorecard & candidate introduction has been automatically emailed to <strong>jitendrakumart557@gmail.com</strong> and <strong>pt617339@gmail.com</strong> via Gmail secure API.
-                      </p>
-                    </div>
-                  )}
-
-                  {emailSentStatus === 'sending' && (
-                    <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-2xl flex items-center gap-3">
-                      <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin shrink-0" />
-                      <p className="text-xs font-bold text-indigo-800">
-                        Dispatching detailed report automatically via Gmail API...
-                      </p>
-                    </div>
-                  )}
-
-                  {emailSentStatus === 'failure' && (
-                    <div className="bg-red-50 border border-red-200 p-4 rounded-2xl space-y-2">
-                      <p className="text-xs font-bold text-red-800 flex items-center gap-1.5">
-                        <AlertTriangle className="w-4 h-4 text-red-600" />
-                        Automated Delivery Failed
-                      </p>
-                      <p className="text-[11px] text-red-700 leading-relaxed">
-                        {emailErrorMsg || 'An error occurred during secure Gmail submission dispatch.'}
-                      </p>
-                      {gmailToken && (
-                        <button 
-                          onClick={() => sendResultEmail(gmailToken, cuetResult)}
-                          className="text-[10px] font-black uppercase bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl transition-all font-bold cursor-pointer"
-                        >
-                          Retry Dispatch
-                        </button>
-                      )}
-                    </div>
-                  )}
-
-                  {emailSentStatus === 'idle' && !gmailToken && (
-                    <div className="bg-slate-100 border border-slate-200/60 p-4 rounded-2xl">
-                      <p className="text-xs font-semibold text-slate-600 leading-relaxed">
-                        ⚠️ Automatic email dispatch was skipped because Google account authorization was not completed at portal startup.
-                      </p>
-                    </div>
-                  )}
-                  
-                  {emailSentStatus === 'idle' && gmailToken && (
-                    <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <p className="text-xs font-bold text-indigo-900">Google Account Connected</p>
-                        <p className="text-[10px] text-indigo-700">{gmailUserEmail || 'Ready to transmit'}</p>
-                      </div>
-                      <button 
-                        onClick={() => sendResultEmail(gmailToken, cuetResult)}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[10px] uppercase px-4 py-2 rounded-xl transition-all cursor-pointer font-bold"
-                      >
-                        Send Report Now
-                      </button>
-                    </div>
-                  )}
                 </div>
 
                 <div className="flex gap-4">
