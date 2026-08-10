@@ -2423,6 +2423,168 @@ const CUETExamView = ({
   const [nestCandidateName, setNestCandidateName] = useState('John Smith');
   const [nestCandidateEmail, setNestCandidateEmail] = useState('candidate@example.com');
   const [nestCandidatePhoto, setNestCandidatePhoto] = useState<string>('https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200');
+
+  // Unique Session and Persistence States for Test Resuming
+  const [sessionId, setSessionId] = useState<string>('');
+  const [copiedToast, setCopiedToast] = useState<boolean>(false);
+  const [restoredToast, setRestoredToast] = useState<string | null>(null);
+
+  const generateSessionId = () => {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let id = '';
+    for (let i = 0; i < 8; i++) {
+      id += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return id;
+  };
+
+  const saveTestSession = async (targetSessionId: string, statusOverride?: string) => {
+    if (!targetSessionId) return;
+    try {
+      const sessionData = {
+        sessionId: targetSessionId,
+        examType: examType || 'neet',
+        candidateName: currentUser?.name || nestCandidateName || "PALLAVI",
+        cuetQuestions: cuetQuestions || [],
+        cuetAnswers: cuetAnswers || {},
+        cuetStatusMap: cuetStatusMap || {},
+        cuetTimeLeft: cuetTimeLeft ?? 3600,
+        cuetStatus: statusOverride || cuetStatus || 'exam',
+        activeQuestion: activeQuestion || 0,
+        neetData: neetData || {},
+        nestData: nestData || {},
+        jipmatData: jipmatData || {},
+        updatedAt: serverTimestamp(),
+        createdAt: serverTimestamp()
+      };
+
+      await setDoc(doc(db, "testSessions", targetSessionId), sessionData, { merge: true });
+      await setDoc(doc(db, "examSessions", targetSessionId), sessionData, { merge: true });
+    } catch (err) {
+      console.error("Error saving test session to Firestore:", err);
+    }
+  };
+
+  const initializeNewTestSession = async (overrideExamType?: string) => {
+    const newId = generateSessionId();
+    const selectedType = overrideExamType || examType || 'neet';
+    setSessionId(newId);
+
+    const resumeUrl = `${window.location.origin}/${selectedType}/${newId}`;
+    
+    try {
+      window.history.pushState({}, '', `/${selectedType}/${newId}`);
+    } catch (e) {
+      console.warn("History pushState failed:", e);
+    }
+
+    await saveTestSession(newId, 'exam');
+
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(resumeUrl);
+        setCopiedToast(true);
+        setTimeout(() => setCopiedToast(false), 9000);
+      }
+    } catch (e) {
+      console.warn("Clipboard auto-copy failed:", e);
+    }
+  };
+
+  const copyResumeLinkToClipboard = async () => {
+    let sid = sessionId;
+    if (!sid) {
+      sid = generateSessionId();
+      setSessionId(sid);
+    }
+    const exType = examType || 'neet';
+    const resumeUrl = `${window.location.origin}/${exType}/${sid}`;
+    
+    await saveTestSession(sid);
+    
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(resumeUrl);
+        setCopiedToast(true);
+        setTimeout(() => setCopiedToast(false), 7000);
+      } else {
+        alert(`Resume Link: ${resumeUrl}`);
+      }
+    } catch (err) {
+      alert(`Resume Link: ${resumeUrl}`);
+    }
+  };
+
+  // On Mount: Check URL for session restore parameter
+  useEffect(() => {
+    const restoreSessionFromUrl = async () => {
+      try {
+        const pathname = window.location.pathname; // e.g. "/neet/k8x2m9a1"
+        const searchParams = new URLSearchParams(window.location.search);
+        let sidFromUrl = searchParams.get('sessionId') || searchParams.get('session');
+
+        if (!sidFromUrl && pathname && pathname !== '/') {
+          const parts = pathname.split('/').filter(Boolean);
+          if (parts.length >= 2) {
+            sidFromUrl = parts[1];
+          } else if (parts.length === 1 && parts[0].length >= 5) {
+            sidFromUrl = parts[0];
+          }
+        }
+
+        if (sidFromUrl) {
+          let snap = await getDoc(doc(db, "testSessions", sidFromUrl));
+          if (!snap.exists()) {
+            snap = await getDoc(doc(db, "examSessions", sidFromUrl));
+          }
+
+          if (snap.exists()) {
+            const data = snap.data();
+            if (data) {
+              if (data.examType) setExamType(data.examType);
+              if (data.cuetQuestions && data.cuetQuestions.length > 0) setCuetQuestions(data.cuetQuestions);
+              if (data.cuetAnswers) setCuetAnswers(data.cuetAnswers);
+              if (data.cuetStatusMap) setCuetStatusMap(data.cuetStatusMap);
+              if (data.cuetTimeLeft !== undefined) setCuetTimeLeft(data.cuetTimeLeft);
+              if (data.activeQuestion !== undefined) setActiveQuestion(data.activeQuestion);
+              if (data.candidateName) setNestCandidateName(data.candidateName);
+              
+              if (data.cuetStatus) setCuetStatus(data.cuetStatus);
+              else setCuetStatus('exam');
+
+              setSessionId(sidFromUrl);
+              setRestoredToast(`✨ Test Session Restored! Resume Link: ${window.location.origin}/${data.examType || 'exam'}/${sidFromUrl}`);
+              setTimeout(() => setRestoredToast(null), 9000);
+            }
+          } else {
+            setRestoredToast(`⚠️ Unique Session ID [${sidFromUrl}] not found in database.`);
+            setTimeout(() => setRestoredToast(null), 8000);
+          }
+        }
+      } catch (err) {
+        console.error("Error restoring session from URL:", err);
+      }
+    };
+
+    restoreSessionFromUrl();
+  }, []);
+
+  // When exam becomes active, ensure session is created
+  useEffect(() => {
+    if (cuetStatus === 'exam' && !sessionId) {
+      initializeNewTestSession();
+    }
+  }, [cuetStatus]);
+
+  // Auto-Save periodic timer during live exam
+  useEffect(() => {
+    if (cuetStatus === 'exam' && sessionId) {
+      const timer = setInterval(() => {
+        saveTestSession(sessionId);
+      }, 5000);
+      return () => clearInterval(timer);
+    }
+  }, [cuetStatus, sessionId, cuetAnswers, cuetStatusMap, cuetTimeLeft, activeQuestion]);
   const [nestDefaultLanguage, setNestDefaultLanguage] = useState<'English' | 'Hindi' | ''>('');
   const [isDisclaimerChecked, setIsDisclaimerChecked] = useState(false);
   const [nestTextZoom, setNestTextZoom] = useState(100);
@@ -5685,7 +5847,7 @@ const CUETExamView = ({
           </button>
           
           <button 
-            onClick={() => {
+            onClick={async () => {
               if (!nestDefaultLanguage) { alert("Please select your Default Language first."); return; }
               if (!isDisclaimerChecked) { alert("Please inspect and check the disclaimer to declare that you agree to the instructions."); return; }
               setCuetStatus('exam');
@@ -5696,6 +5858,7 @@ const CUETExamView = ({
               setCuetStatusMap(initialMap);
               setActiveQuestion(0);
               requestFullscreen();
+              await initializeNewTestSession();
             }} 
             className="bg-[#5cb85c] hover:bg-green-700 text-white font-black text-xs uppercase px-5 py-2.5 rounded tracking-wider shadow-md transition-all active:scale-[0.98]"
           >
@@ -6499,6 +6662,42 @@ const CUETExamView = ({
 
     return (
       <div className="fixed inset-0 bg-[#f4f7f9] text-slate-800 z-[90] flex flex-col font-sans">
+        {/* Floating Toast Notification for Link Copy & Session Restore */}
+        <AnimatePresence>
+          {(copiedToast || restoredToast) && (
+            <motion.div
+              initial={{ opacity: 0, y: -20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20, scale: 0.95 }}
+              className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] max-w-lg w-full px-4"
+            >
+              <div className="bg-slate-900 text-white p-4 rounded-2xl shadow-2xl border-2 border-emerald-500 flex items-center justify-between gap-3 font-sans">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black uppercase text-emerald-400 tracking-wider">
+                      {copiedToast ? 'Exam Resume Link Saved & Copied!' : 'Exam Status'}
+                    </h4>
+                    <p className="text-[11px] font-bold text-slate-200 leading-snug mt-0.5">
+                      {copiedToast 
+                        ? `URL: ${window.location.origin}/${examType}/${sessionId} (Auto-saved to clipboard! Open anytime on any device to resume)`
+                        : restoredToast}
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => { setCopiedToast(false); setRestoredToast(null); }}
+                  className="text-slate-400 hover:text-white p-1"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* NTA Master Header */}
         <div className="bg-white border-b flex flex-col sm:flex-row justify-between items-center px-6 py-3 shadow-md z-[100]">
           <div className="flex items-center gap-4">
@@ -6545,6 +6744,14 @@ const CUETExamView = ({
                 ))}
             </div>
             <div className="hidden md:flex items-center gap-4 text-white">
+                <button
+                  onClick={copyResumeLinkToClipboard}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-md transition-all active:scale-95 cursor-pointer"
+                  title="Copy test resume link to clipboard"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Copy Resume Link</span>
+                </button>
                 <div className="flex items-center gap-2 text-[10px] font-bold uppercase"><Monitor className="w-4 h-4"/> NTA PRACTICE PORTAL V2.6</div>
             </div>
         </div>

@@ -22,6 +22,14 @@ service cloud.firestore {
     match /adminConfig/{allPaths=**} {
       allow read, write: if true;
     }
+
+    match /examSessions/{allPaths=**} {
+      allow read, write: if true;
+    }
+
+    match /testSessions/{allPaths=**} {
+      allow read, write: if true;
+    }
     
     match /_connection_test/{testId} {
       allow read, write: if isAuthenticated();
