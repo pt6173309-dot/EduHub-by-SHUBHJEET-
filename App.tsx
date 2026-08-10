@@ -34,6 +34,7 @@ import {
   Calculator,
   Menu,
   Mail,
+  Upload
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import jsPDF from 'jspdf';
@@ -1486,6 +1487,23 @@ const AppContent: React.FC = () => {
   const [neetData, setNeetData] = useState<Record<string, any[]>>({ 'Physics': [], 'Chemistry': [], 'Biology': [] });
   const [nestData, setNestData] = useState<Record<string, any[]>>({ 'Biology': [], 'Chemistry': [], 'Physics': [] });
   
+  // NEET specific states
+  const [neetUploadMethods, setNeetUploadMethods] = useState<Record<string, 'text' | 'file'>>({
+    'Physics': 'text',
+    'Chemistry': 'text',
+    'Biology': 'text'
+  });
+  const [neetFiles, setNeetFiles] = useState<Record<string, File | null>>({
+    'Physics': null,
+    'Chemistry': null,
+    'Biology': null
+  });
+  const [neetPastedTexts, setNeetPastedTexts] = useState<Record<string, string>>({
+    'Physics': '',
+    'Chemistry': '',
+    'Biology': ''
+  });
+
   // JIPMAT specific states
   const [jipmatData, setJipmatData] = useState<Record<string, any[]>>({
     'Quantitative Aptitude (QA)': [],
@@ -1515,6 +1533,10 @@ const AppContent: React.FC = () => {
   const [cuetResult, setCuetResult] = useState<any>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [neetOmrFilled, setNeetOmrFilled] = useState<Record<number, boolean>>({});
+  const [neetFullPaperFile, setNeetFullPaperFile] = useState<File | null>(null);
+  const [neetFullPaperText, setNeetFullPaperText] = useState<string>('');
+  const [neetFullUploadMethod, setNeetFullUploadMethod] = useState<'file' | 'text'>('file');
+  const [neetUploadMode, setNeetUploadMode] = useState<'full' | 'subject'>('full');
 
   const [isFullscreenActive, setIsFullscreenActive] = useState<boolean>(false);
 
@@ -1980,6 +2002,134 @@ const AppContent: React.FC = () => {
     }
   };
 
+  const handleNeetFullPaperFileUpload = async (file: File) => {
+    const apiKey = process.env.GEMINI_API_KEY || (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY);
+    if (!apiKey) { alert("AI Service is currently unavailable. Please ensure GEMINI_API_KEY is set."); return; }
+
+    setIsAiLoading(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const fileToGenerativePart = async (f: File) => {
+        const base64EncodedDataPromise = new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+          reader.readAsDataURL(f);
+        });
+        return {
+          inlineData: { data: await base64EncodedDataPromise as string, mimeType: f.type },
+        };
+      };
+
+      const fileData = await fileToGenerativePart(file);
+      const prompt = `Extract ALL multiple choice questions from this complete NEET UG question paper (image or PDF file). 
+      Classify each extracted question into its appropriate subject: "Physics", "Chemistry", or "Biology".
+      Format each question as an object with:
+      1. subject: "Physics" | "Chemistry" | "Biology" (if subject is not explicitly stated in header, infer from question content)
+      2. question: the full text of the question. Keep it exactly literal to the source text with NO custom changes, rewrites, or omissions to prevent mistakes.
+      3. options: an array of EXACTLY 4 strings.
+         CRITICAL: You MUST sanitize every option string by completely removing any correct-answer indicators, asterisks (*), bold formatting markdown (like **option** or *option*), ticks, checkmarks, arrows, or trailing suffixes like "(correct)", "(ans)", "(Answer)", "Ans:", "Answer is Option", etc. All 4 options MUST look completely identical, standard, and uniform in formatting so that there is absolutely NO textual clue or bolding pointing to the correct choice.
+      4. diagramSvg: A string containing beautifully structured standard inline vector <svg> code representing any diagram, graph, drawing, coordinates, pulleys on incline slope, physics circuit diagram, or chemical compound mentioned or present in the question. Include coordinate axes with clear labels, visual nodes, vectors, arrows, and elegant styling. Note: Background should be transparent or white, stroke colors MUST use dark grays (#333333, #475569) so they are outstanding. Width of this <svg> should be 100% and height should be around 150-250px. If no diagram/graph is needed or present for the question, set this field to null or "".
+      5. diagramTitle: A short string title of the diagram (e.g., "Coordinate Plot", "Chemical Structure Benzene Ring") if diagramSvg is present, otherwise null or "".
+      6. correct: the index (0-3) of the correct answer (if marked, or default 0)
+
+      Return ONLY a JSON array of these objects: [{"subject": "Physics", "question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: [{ parts: [{ text: prompt }, fileData] }],
+      });
+      const text = response.text;
+      const jsonMatch = text ? text.match(/\[[\s\S]*\]/) : null;
+      if (jsonMatch) {
+        const extracted = JSON.parse(jsonMatch[0]);
+        if (extracted.length > 0) {
+          const newNeetData = { Physics: [] as any[], Chemistry: [] as any[], Biology: [] as any[] };
+          extracted.forEach((q: any) => {
+            const sub = (q.subject && ['Physics', 'Chemistry', 'Biology'].includes(q.subject)) ? q.subject : 'Biology';
+            newNeetData[sub as keyof typeof newNeetData].push({
+              question: q.question,
+              options: q.options,
+              diagramSvg: q.diagramSvg || null,
+              diagramTitle: q.diagramTitle || null,
+              correct: typeof q.correct === 'number' ? q.correct : 0,
+              subject: sub
+            });
+          });
+          setNeetData(newNeetData);
+          alert(`Successfully extracted ${extracted.length} total questions from NEET paper! (Physics: ${newNeetData.Physics.length}, Chemistry: ${newNeetData.Chemistry.length}, Biology: ${newNeetData.Biology.length})`);
+        } else {
+          alert("No questions found in the file.");
+        }
+      } else {
+        alert("Found issue parsing AI response. Please try again.");
+      }
+    } catch (error: any) {
+      console.error('NEET Full Paper Extraction Error:', error);
+      alert('Failed: ' + error.message);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const handleNeetFullPaperTextUpload = async (pastedText: string) => {
+    const apiKey = process.env.GEMINI_API_KEY || (import.meta.env && import.meta.env.VITE_GEMINI_API_KEY);
+    if (!apiKey) { alert("AI Service is currently unavailable. Please ensure GEMINI_API_KEY is set."); return; }
+    if (!pastedText.trim()) { alert("Please paste text first."); return; }
+
+    setIsAiLoading(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `Extract ALL multiple choice questions from this NEET UG question paper text.
+      Classify each extracted question into its appropriate subject: "Physics", "Chemistry", or "Biology".
+      Format each question as an object with:
+      1. subject: "Physics" | "Chemistry" | "Biology"
+      2. question: the full text of the question. Keep it exactly literal to the source text.
+      3. options: an array of EXACTLY 4 strings.
+         CRITICAL: You MUST sanitize every option string by completely removing any correct-answer indicators, asterisks (*), bold formatting markdown (like **option** or *option*), ticks, checkmarks, arrows, or trailing suffixes like "(correct)", "(ans)", "(Answer)", "Ans:", "Answer is Option", etc. All 4 options MUST look completely identical, standard, and uniform in formatting so that there is absolutely NO textual clue or bolding pointing to the correct choice.
+      4. diagramSvg: A string containing beautifully structured standard inline vector <svg> code representing any diagram or compound mentioned.
+      5. diagramTitle: Title or null.
+      6. correct: index 0-3.
+
+      Text to process:
+      ${pastedText}
+
+      Return ONLY a JSON array of these objects: [{"subject": "Physics", "question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: [{ parts: [{ text: prompt }] }],
+      });
+      const text = response.text;
+      const jsonMatch = text ? text.match(/\[[\s\S]*\]/) : null;
+      if (jsonMatch) {
+        const extracted = JSON.parse(jsonMatch[0]);
+        if (extracted.length > 0) {
+          const newNeetData = { Physics: [] as any[], Chemistry: [] as any[], Biology: [] as any[] };
+          extracted.forEach((q: any) => {
+            const sub = (q.subject && ['Physics', 'Chemistry', 'Biology'].includes(q.subject)) ? q.subject : 'Biology';
+            newNeetData[sub as keyof typeof newNeetData].push({
+              question: q.question,
+              options: q.options,
+              diagramSvg: q.diagramSvg || null,
+              diagramTitle: q.diagramTitle || null,
+              correct: typeof q.correct === 'number' ? q.correct : 0,
+              subject: sub
+            });
+          });
+          setNeetData(newNeetData);
+          alert(`Successfully extracted ${extracted.length} total questions from text! (Physics: ${newNeetData.Physics.length}, Chemistry: ${newNeetData.Chemistry.length}, Biology: ${newNeetData.Biology.length})`);
+        } else {
+          alert("No questions found.");
+        }
+      }
+    } catch (error: any) {
+      console.error('NEET Full Paper Extraction Error:', error);
+      alert('Failed: ' + error.message);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
   const startNeetSimulation = () => {
     // Collect all subjects into one array but track subject indices
     const allQs: any[] = [];
@@ -1998,7 +2148,7 @@ const AppContent: React.FC = () => {
     setCuetStatusMap({});
     // NEET duration scales dynamically: 1.5 minutes (90 seconds) per question
     setCuetTimeLeft(allQs.length * 90);
-    setCuetStatus('instructions');
+    setCuetStatus('nest-login');
   };
 
   const handleCuetTextUpload = async (pastedText: string) => {
@@ -2048,7 +2198,7 @@ const AppContent: React.FC = () => {
         const extractedQuestions = JSON.parse(jsonMatch[0]);
         if (extractedQuestions.length > 0) {
           setCuetQuestions(extractedQuestions);
-          setCuetStatus('instructions');
+          setCuetStatus('nest-login');
           setCuetAnswers({});
           setCuetStatusMap({});
           // Dynamic timer: 1.5 minutes (90 seconds) per extracted question
@@ -2118,7 +2268,7 @@ const AppContent: React.FC = () => {
         const extractedQuestions = JSON.parse(jsonMatch[0]);
         if (extractedQuestions.length > 0) {
           setCuetQuestions(extractedQuestions);
-          setCuetStatus('instructions');
+          setCuetStatus('nest-login');
           setCuetAnswers({});
           setCuetStatusMap({});
           // Dynamic timer: 1.5 minutes (90 seconds) per extracted question
@@ -2184,6 +2334,16 @@ const AppContent: React.FC = () => {
           setIsFullscreenActive={setIsFullscreenActive}
           isFullscreenSupported={isFullscreenSupported}
           requestFullscreen={requestFullscreen}
+          neetFullPaperFile={neetFullPaperFile}
+          setNeetFullPaperFile={setNeetFullPaperFile}
+          neetFullPaperText={neetFullPaperText}
+          setNeetFullPaperText={setNeetFullPaperText}
+          neetFullUploadMethod={neetFullUploadMethod}
+          setNeetFullUploadMethod={setNeetFullUploadMethod}
+          neetUploadMode={neetUploadMode}
+          setNeetUploadMode={setNeetUploadMode}
+          handleNeetFullPaperFileUpload={handleNeetFullPaperFileUpload}
+          handleNeetFullPaperTextUpload={handleNeetFullPaperTextUpload}
         />
       </div>
       <footer className="py-8 border-t border-slate-900">
@@ -2207,7 +2367,12 @@ const CUETExamView = ({
   neetOmrFilled, setNeetOmrFilled,
   nestData, handleNestTextUpload, handleNestFileUpload, startNestSimulation,
   jipmatData, handleJipmatTextUpload, handleJipmatFileUpload, startJipmatSimulation,
-  isFullscreenActive, setIsFullscreenActive, isFullscreenSupported, requestFullscreen
+  isFullscreenActive, setIsFullscreenActive, isFullscreenSupported, requestFullscreen,
+  neetFullPaperFile, setNeetFullPaperFile,
+  neetFullPaperText, setNeetFullPaperText,
+  neetFullUploadMethod, setNeetFullUploadMethod,
+  neetUploadMode, setNeetUploadMode,
+  handleNeetFullPaperFileUpload, handleNeetFullPaperTextUpload
 }: any) => {
   const [activeQuestion, setActiveQuestion] = useState(0);
   const [unlockCode, setUnlockCode] = useState('');
@@ -4637,125 +4802,279 @@ const CUETExamView = ({
     }
 
     if (examType === 'neet') {
+      const totalNeetQs = (neetData['Physics']?.length || 0) + (neetData['Chemistry']?.length || 0) + (neetData['Biology']?.length || 0);
+
       return (
         <div className="max-w-4xl mx-auto py-12 space-y-8 px-4">
           <div className="text-center space-y-4">
             <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">NEET UG SIMULATOR</h2>
-            <p className="text-red-500 font-bold text-xs tracking-widest uppercase">Multi-Subject Question Injection</p>
+            <p className="text-red-500 font-bold text-xs tracking-widest uppercase">Multi-Subject Question Injection & Full Paper Import</p>
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {['Physics', 'Chemistry', 'Biology'].map(sub => {
-              const method = neetUploadMethods[sub] || 'text';
-              const file = neetFiles[sub];
-              return (
-                <div key={sub} className="bg-white p-6 rounded-3xl border border-slate-200 space-y-4 shadow-xl flex flex-col justify-between">
-                  <div className="space-y-3">
-                    <h3 className="font-orbitron font-black text-sm text-slate-800 uppercase tracking-widest">{sub}</h3>
-                    
-                    {/* Tab selection */}
-                    <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200/50">
-                      <button
-                        onClick={() => setNeetUploadMethods({...neetUploadMethods, [sub]: 'text'})}
-                        className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded-lg transition-all ${
-                          method === 'text' 
-                            ? 'bg-slate-900 text-white shadow-xs' 
-                            : 'text-slate-500 hover:text-slate-800'
-                        }`}
-                      >
-                        Paste Text
-                      </button>
-                      <button
-                        onClick={() => setNeetUploadMethods({...neetUploadMethods, [sub]: 'file'})}
-                        className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded-lg transition-all ${
-                          method === 'file' 
-                            ? 'bg-slate-900 text-white shadow-xs' 
-                            : 'text-slate-500 hover:text-slate-800'
-                        }`}
-                      >
-                        Upload File
-                      </button>
-                    </div>
 
-                    {method === 'text' ? (
-                      <textarea 
-                        value={neetPastedTexts[sub] || ''}
-                        onChange={(e) => setNeetPastedTexts({...neetPastedTexts, [sub]: e.target.value})}
-                        placeholder={`Paste ${sub} questions here...`}
-                        className="w-full h-40 p-3 bg-slate-50 border rounded-2xl text-xs font-mono outline-none focus:border-slate-500 transition-all leading-relaxed resize-none"
-                      />
-                    ) : (
-                      <div 
-                        onClick={() => document.getElementById(`neet-file-${sub}`)?.click()}
-                        className={`border-2 border-dashed rounded-2xl p-4 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[160px] ${
-                          file 
-                            ? 'border-emerald-500 bg-emerald-50/10' 
-                            : 'border-slate-200 bg-slate-50 hover:bg-slate-100/50 hover:border-slate-400'
-                        }`}
-                      >
-                        <input 
-                          id={`neet-file-${sub}`}
-                          type="file" 
-                          accept="application/pdf,image/*"
-                          onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            if (f) setNeetFiles({...neetFiles, [sub]: f});
-                          }}
-                          className="hidden" 
-                        />
-                        {file ? (
-                          <div className="space-y-1">
-                            <FileText className="w-6 h-6 text-emerald-500 mx-auto" />
-                            <p className="text-[10px] font-black text-slate-800 truncate max-w-[140px] mx-auto">{file.name}</p>
-                            <p className="text-[8px] text-slate-400 font-bold uppercase">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
-                            <span className="inline-block text-[7px] bg-slate-100 text-slate-600 font-bold px-1.5 py-0.5 rounded-md uppercase">Click to replace</span>
-                          </div>
-                        ) : (
-                          <div className="space-y-1">
-                            <FileText className="w-6 h-6 text-slate-400 mx-auto" />
-                            <p className="text-[10px] font-bold text-slate-700">Choose PDF or Image</p>
-                            <p className="text-[8px] text-slate-400">Click or Drag & Drop</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
+          {/* Mode Switcher: Full Paper vs Subject-wise */}
+          <div className="flex bg-slate-100 p-1.5 rounded-2xl max-w-md mx-auto border border-slate-200 shadow-sm">
+            <button
+              onClick={() => setNeetUploadMode('full')}
+              className={`flex-1 py-3 text-xs font-black uppercase rounded-xl transition-all flex items-center justify-center gap-2 ${
+                neetUploadMode === 'full' 
+                  ? 'bg-red-600 text-white shadow-md' 
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              Upload Entire Paper (1 PDF)
+            </button>
+            <button
+              onClick={() => setNeetUploadMode('subject')}
+              className={`flex-1 py-3 text-xs font-black uppercase rounded-xl transition-all flex items-center justify-center gap-2 ${
+                neetUploadMode === 'subject' 
+                  ? 'bg-red-600 text-white shadow-md' 
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Upload className="w-4 h-4" />
+              Subject-wise Upload
+            </button>
+          </div>
 
-                  <div className="space-y-3 mt-4">
-                    <button 
-                      onClick={() => {
-                        if (method === 'text') {
-                          handleNeetTextUpload(sub, neetPastedTexts[sub]);
-                        } else {
-                          if (file) {
-                            handleNeetFileUpload(sub, file);
-                          } else {
-                            alert('Please select a PDF or Image file first.');
-                          }
-                        }
-                      }}
-                      disabled={isAiLoading || (method === 'text' ? !neetPastedTexts[sub]?.trim() : !file)}
-                      className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-black disabled:opacity-50 transition-colors"
-                    >
-                      {isAiLoading ? 'Analyzing...' : `Extract ${sub}`}
-                    </button>
-                    <div className="text-center">
-                      <p className="text-[10px] font-bold text-slate-400">
-                        {neetData[sub]?.length || 0} Questions Ready
-                      </p>
-                    </div>
-                  </div>
+          {neetUploadMode === 'full' ? (
+            <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-xl space-y-6 max-w-2xl mx-auto">
+              <div className="text-center space-y-2">
+                <div className="w-12 h-12 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mx-auto">
+                  <FileText className="w-6 h-6" />
                 </div>
-              );
-            })}
-          </div>
+                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">Upload Entire NEET Question Paper PDF</h3>
+                <p className="text-xs text-slate-500 font-medium max-w-md mx-auto">
+                  Upload your full NEET question paper PDF or image. Gemini AI will automatically extract all questions and categorize them into Physics, Chemistry, and Biology.
+                </p>
+              </div>
+
+              {/* Toggle File vs Text */}
+              <div className="flex bg-slate-100 p-1 rounded-xl max-w-xs mx-auto border border-slate-200">
+                <button
+                  onClick={() => setNeetFullUploadMethod('file')}
+                  className={`flex-1 py-2 text-[10px] font-black uppercase rounded-lg transition-all ${
+                    neetFullUploadMethod === 'file' ? 'bg-slate-900 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  Upload File / PDF
+                </button>
+                <button
+                  onClick={() => setNeetFullUploadMethod('text')}
+                  className={`flex-1 py-2 text-[10px] font-black uppercase rounded-lg transition-all ${
+                    neetFullUploadMethod === 'text' ? 'bg-slate-900 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  Paste Full Text
+                </button>
+              </div>
+
+              {neetFullUploadMethod === 'file' ? (
+                <div 
+                  onClick={() => document.getElementById('neet-full-pdf-file')?.click()}
+                  className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[180px] ${
+                    neetFullPaperFile 
+                      ? 'border-red-500 bg-red-50/20' 
+                      : 'border-slate-300 bg-slate-50 hover:bg-slate-100/60 hover:border-slate-400'
+                  }`}
+                >
+                  <input 
+                    id="neet-full-pdf-file"
+                    type="file" 
+                    accept="application/pdf,image/*"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) setNeetFullPaperFile(f);
+                    }}
+                    className="hidden" 
+                  />
+                  {neetFullPaperFile ? (
+                    <div className="space-y-2">
+                      <FileText className="w-10 h-10 text-red-600 mx-auto" />
+                      <p className="text-sm font-black text-slate-800 truncate max-w-[260px] mx-auto">{neetFullPaperFile.name}</p>
+                      <p className="text-xs text-slate-400 font-bold uppercase">{(neetFullPaperFile.size / (1024 * 1024)).toFixed(2)} MB</p>
+                      <span className="inline-block text-[9px] bg-red-100 text-red-700 font-black px-2.5 py-1 rounded-md uppercase">Click to change PDF</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Upload className="w-10 h-10 text-slate-400 mx-auto" />
+                      <p className="text-sm font-black text-slate-700">Select Entire NEET Paper (PDF or Image)</p>
+                      <p className="text-xs text-slate-400 font-medium">Supports all subjects in 1 file • AI Auto-Categorization</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <textarea 
+                  value={neetFullPaperText}
+                  onChange={(e) => setNeetFullPaperText(e.target.value)}
+                  placeholder="Paste complete NEET question paper text here..."
+                  className="w-full h-48 p-4 bg-slate-50 border rounded-2xl text-xs font-mono outline-none focus:border-red-500 transition-all leading-relaxed resize-none"
+                />
+              )}
+
+              <button 
+                onClick={() => {
+                  if (neetFullUploadMethod === 'file') {
+                    if (neetFullPaperFile) {
+                      handleNeetFullPaperFileUpload(neetFullPaperFile);
+                    } else {
+                      alert('Please select a NEET paper PDF or Image file first.');
+                    }
+                  } else {
+                    if (neetFullPaperText.trim()) {
+                      handleNeetFullPaperTextUpload(neetFullPaperText);
+                    } else {
+                      alert('Please paste question paper text first.');
+                    }
+                  }
+                }}
+                disabled={isAiLoading || (neetFullUploadMethod === 'file' ? !neetFullPaperFile : !neetFullPaperText.trim())}
+                className="w-full bg-red-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-red-700 disabled:opacity-50 transition-all shadow-lg flex items-center justify-center gap-2"
+              >
+                {isAiLoading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    AI Analyzing Full Paper...
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-4 h-4" />
+                    Extract All Questions with AI
+                  </>
+                )}
+              </button>
+
+              {/* Live Count Overview */}
+              <div className="grid grid-cols-3 gap-3 pt-2">
+                <div className="bg-slate-50 p-3 rounded-xl text-center border border-slate-200">
+                  <span className="text-[9px] font-black uppercase text-slate-400">Physics</span>
+                  <p className="text-base font-black text-slate-800">{neetData['Physics']?.length || 0} Qs</p>
+                </div>
+                <div className="bg-slate-50 p-3 rounded-xl text-center border border-slate-200">
+                  <span className="text-[9px] font-black uppercase text-slate-400">Chemistry</span>
+                  <p className="text-base font-black text-slate-800">{neetData['Chemistry']?.length || 0} Qs</p>
+                </div>
+                <div className="bg-slate-50 p-3 rounded-xl text-center border border-slate-200">
+                  <span className="text-[9px] font-black uppercase text-slate-400">Biology</span>
+                  <p className="text-base font-black text-slate-800">{neetData['Biology']?.length || 0} Qs</p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {['Physics', 'Chemistry', 'Biology'].map(sub => {
+                const method = neetUploadMethods[sub] || 'text';
+                const file = neetFiles[sub];
+                return (
+                  <div key={sub} className="bg-white p-6 rounded-3xl border border-slate-200 space-y-4 shadow-xl flex flex-col justify-between">
+                    <div className="space-y-3">
+                      <h3 className="font-orbitron font-black text-sm text-slate-800 uppercase tracking-widest">{sub}</h3>
+                      
+                      {/* Tab selection */}
+                      <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200/50">
+                        <button
+                          onClick={() => setNeetUploadMethods({...neetUploadMethods, [sub]: 'text'})}
+                          className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded-lg transition-all ${
+                            method === 'text' 
+                              ? 'bg-slate-900 text-white shadow-xs' 
+                              : 'text-slate-500 hover:text-slate-800'
+                          }`}
+                        >
+                          Paste Text
+                        </button>
+                        <button
+                          onClick={() => setNeetUploadMethods({...neetUploadMethods, [sub]: 'file'})}
+                          className={`flex-1 py-1.5 text-[9px] font-black uppercase rounded-lg transition-all ${
+                            method === 'file' 
+                              ? 'bg-slate-900 text-white shadow-xs' 
+                              : 'text-slate-500 hover:text-slate-800'
+                          }`}
+                        >
+                          Upload File
+                        </button>
+                      </div>
+
+                      {method === 'text' ? (
+                        <textarea 
+                          value={neetPastedTexts[sub] || ''}
+                          onChange={(e) => setNeetPastedTexts({...neetPastedTexts, [sub]: e.target.value})}
+                          placeholder={`Paste ${sub} questions here...`}
+                          className="w-full h-40 p-3 bg-slate-50 border rounded-2xl text-xs font-mono outline-none focus:border-slate-500 transition-all leading-relaxed resize-none"
+                        />
+                      ) : (
+                        <div 
+                          onClick={() => document.getElementById(`neet-file-${sub}`)?.click()}
+                          className={`border-2 border-dashed rounded-2xl p-4 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[160px] ${
+                            file 
+                              ? 'border-emerald-500 bg-emerald-50/10' 
+                              : 'border-slate-200 bg-slate-50 hover:bg-slate-100/50 hover:border-slate-400'
+                          }`}
+                        >
+                          <input 
+                            id={`neet-file-${sub}`}
+                            type="file" 
+                            accept="application/pdf,image/*"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f) setNeetFiles({...neetFiles, [sub]: f});
+                            }}
+                            className="hidden" 
+                          />
+                          {file ? (
+                            <div className="space-y-1">
+                              <FileText className="w-6 h-6 text-emerald-500 mx-auto" />
+                              <p className="text-[10px] font-black text-slate-800 truncate max-w-[140px] mx-auto">{file.name}</p>
+                              <p className="text-[8px] text-slate-400 font-bold uppercase">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
+                              <span className="inline-block text-[7px] bg-slate-100 text-slate-600 font-bold px-1.5 py-0.5 rounded-md uppercase">Click to replace</span>
+                            </div>
+                          ) : (
+                            <div className="space-y-1">
+                              <FileText className="w-6 h-6 text-slate-400 mx-auto" />
+                              <p className="text-[10px] font-bold text-slate-700">Choose PDF or Image</p>
+                              <p className="text-[8px] text-slate-400">Click or Drag & Drop</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-3 mt-4">
+                      <button 
+                        onClick={() => {
+                          if (method === 'text') {
+                            handleNeetTextUpload(sub, neetPastedTexts[sub]);
+                          } else {
+                            if (file) {
+                              handleNeetFileUpload(sub, file);
+                            } else {
+                              alert('Please select a PDF or Image file first.');
+                            }
+                          }
+                        }}
+                        disabled={isAiLoading || (method === 'text' ? !neetPastedTexts[sub]?.trim() : !file)}
+                        className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-black disabled:opacity-50 transition-colors"
+                      >
+                        {isAiLoading ? 'Analyzing...' : `Extract ${sub}`}
+                      </button>
+                      <div className="text-center">
+                        <p className="text-[10px] font-bold text-slate-400">
+                          {neetData[sub]?.length || 0} Questions Ready
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           <button 
             onClick={startNeetSimulation}
-            className="w-full bg-red-600 text-white font-black py-6 rounded-[30px] uppercase text-2xl shadow-2xl hover:bg-red-700 transition-all flex items-center justify-center gap-4"
+            disabled={totalNeetQs === 0}
+            className="w-full bg-red-600 text-white font-black py-6 rounded-[30px] uppercase text-xl sm:text-2xl shadow-2xl hover:bg-red-700 disabled:opacity-50 transition-all flex items-center justify-center gap-4"
           >
             <Zap className="w-8 h-8" />
-            INITIALIZE TEST ENVIRONMENT
+            INITIALIZE TEST ENVIRONMENT ({totalNeetQs} Qs Ready)
           </button>
           
           <div className="text-center">
@@ -5512,7 +5831,7 @@ const CUETExamView = ({
         'answered-marked': Object.values(cuetStatusMap).filter(v => v === 'answered-marked').length,
     };
 
-    if (examType === 'nest' || examType === 'jipmat') {
+    if (false) {
       const currentAns = cuetAnswers[activeQuestion];
       return (
         <div key="nest-exam-container" className="fixed inset-0 bg-[#f4f7f9] text-slate-850 z-[90] flex flex-col font-sans select-none overflow-hidden">
@@ -6262,29 +6581,32 @@ const CUETExamView = ({
                   const isNeet = examType === 'neet';
                   
                   return (
-                    <div key={i} className={`flex items-center gap-4 transition-all`}>
-                      {isNeet ? (
-                        <OmrCircle 
-                          index={activeQuestion} 
-                          optionIdx={i} 
-                          isFilled={isSelected} 
-                          onFill={() => {
-                            if (!isSelected) {
-                              setCuetAnswers({...cuetAnswers, [activeQuestion]: i.toString()});
-                              setNeetOmrFilled({...neetOmrFilled, [activeQuestion]: true});
-                            }
-                          }}
-                        />
-                      ) : (
-                        <button 
-                          onClick={() => setCuetAnswers({...cuetAnswers, [activeQuestion]: i.toString()})}
-                          className={`w-10 h-10 rounded-full border-2 flex items-center justify-center font-black text-xs shrink-0 transition-colors ${isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 text-slate-500'}`}
-                        >
-                          {String.fromCharCode(65 + i)}
-                        </button>
-                      )}
+                    <div 
+                      key={i} 
+                      onClick={() => {
+                        setCuetAnswers({...cuetAnswers, [activeQuestion]: i.toString()});
+                        setCuetStatusMap((prev: any) => ({...prev, [activeQuestion]: 'answered'}));
+                        if (isNeet) {
+                          setNeetOmrFilled({...neetOmrFilled, [activeQuestion]: true});
+                        }
+                      }}
+                      className="flex items-center gap-4 transition-all cursor-pointer group"
+                    >
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCuetAnswers({...cuetAnswers, [activeQuestion]: i.toString()});
+                          setCuetStatusMap((prev: any) => ({...prev, [activeQuestion]: 'answered'}));
+                          if (isNeet) {
+                            setNeetOmrFilled({...neetOmrFilled, [activeQuestion]: true});
+                          }
+                        }}
+                        className={`w-10 h-10 rounded-full border-2 flex items-center justify-center font-black text-xs shrink-0 transition-colors ${isSelected ? (isNeet ? 'bg-red-600 border-red-600 text-white' : 'bg-blue-600 border-blue-600 text-white') : 'border-slate-300 text-slate-500 hover:border-slate-400'}`}
+                      >
+                        {String.fromCharCode(65 + i)}
+                      </button>
                       
-                      <div className={`flex-1 p-4 rounded-xl border-2 transition-all ${isSelected ? 'border-slate-800 bg-slate-50 shadow-sm' : 'border-slate-100'}`}>
+                      <div className={`flex-1 p-4 rounded-xl border-2 transition-all ${isSelected ? (isNeet ? 'border-red-600 bg-red-50/30 shadow-xs' : 'border-slate-800 bg-slate-50 shadow-xs') : 'border-slate-100 group-hover:border-slate-200'}`}>
                         <span className={`text-sm font-bold ${isSelected ? 'text-slate-900' : 'text-slate-600'}`}>
                           <MathOrImageRenderer text={opt} />
                         </span>
