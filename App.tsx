@@ -2429,6 +2429,13 @@ const CUETExamView = ({
   const [copiedToast, setCopiedToast] = useState<boolean>(false);
   const [restoredToast, setRestoredToast] = useState<string | null>(null);
 
+  // Past Sessions Modal States
+  const [isPastModalOpen, setIsPastModalOpen] = useState<boolean>(false);
+  const [pastSessionsList, setPastSessionsList] = useState<any[]>([]);
+  const [isLoadingPastSessions, setIsLoadingPastSessions] = useState<boolean>(false);
+  const [searchPastQuery, setSearchPastQuery] = useState<string>('');
+  const [manualSessionInput, setManualSessionInput] = useState<string>('');
+
   const generateSessionId = () => {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
     let id = '';
@@ -2436,6 +2443,124 @@ const CUETExamView = ({
       id += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     return id;
+  };
+
+  const loadPastSessions = async () => {
+    setIsLoadingPastSessions(true);
+    setIsPastModalOpen(true);
+    const sessionMap = new Map<string, any>();
+
+    // 1. Scan LocalStorage for instant cached tests
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('testSession_')) {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            const item = JSON.parse(raw);
+            if (item && item.sessionId) {
+              sessionMap.set(item.sessionId, item);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("LocalStorage scan warning:", e);
+    }
+
+    // 2. Fetch from Firestore collections testSessions and examSessions
+    try {
+      const q1 = query(collection(db, "testSessions"));
+      const snap1 = await getDocs(q1);
+      snap1.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data && (data.sessionId || docSnap.id)) {
+          sessionMap.set(data.sessionId || docSnap.id, { ...data, sessionId: data.sessionId || docSnap.id });
+        }
+      });
+
+      const q2 = query(collection(db, "examSessions"));
+      const snap2 = await getDocs(q2);
+      snap2.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data && (data.sessionId || docSnap.id)) {
+          if (!sessionMap.has(data.sessionId || docSnap.id)) {
+            sessionMap.set(data.sessionId || docSnap.id, { ...data, sessionId: data.sessionId || docSnap.id });
+          }
+        }
+      });
+    } catch (err) {
+      console.warn("Firestore past sessions query warning:", err);
+    }
+
+    const list = Array.from(sessionMap.values());
+    list.sort((a, b) => {
+      const tA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+      const tB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+      return tB - tA;
+    });
+
+    setPastSessionsList(list);
+    setIsLoadingPastSessions(false);
+  };
+
+  const restoreSelectedSession = (data: any) => {
+    if (!data) return;
+    if (data.examType) setExamType(data.examType);
+    if (data.cuetQuestions && data.cuetQuestions.length > 0) setCuetQuestions(data.cuetQuestions);
+    if (data.cuetAnswers) setCuetAnswers(data.cuetAnswers);
+    if (data.cuetStatusMap) setCuetStatusMap(data.cuetStatusMap);
+    if (data.cuetTimeLeft !== undefined) setCuetTimeLeft(data.cuetTimeLeft);
+    if (data.activeQuestion !== undefined) setActiveQuestion(data.activeQuestion);
+    if (data.candidateName) setNestCandidateName(data.candidateName);
+    if (data.cuetResult) setCuetResult(data.cuetResult);
+
+    setSessionId(data.sessionId);
+
+    const status = data.cuetStatus || (data.cuetResult ? 'finished' : 'exam');
+    if (status === 'finished' || status === 'submitted' || status === 'result') {
+      setCuetStatus('finished');
+    } else {
+      setCuetStatus('exam');
+    }
+
+    try {
+      window.history.replaceState({}, '', `/${data.examType || 'neet'}/${data.sessionId}`);
+    } catch (e) {}
+
+    setIsPastModalOpen(false);
+    setRestoredToast(`✨ Test Session [${data.sessionId}] loaded successfully!`);
+    setTimeout(() => setRestoredToast(null), 7000);
+  };
+
+  const handleManualSearchSubmit = async () => {
+    const cleanId = manualSessionInput.trim();
+    if (!cleanId) return;
+
+    // Check local
+    try {
+      const localRaw = localStorage.getItem(`testSession_${cleanId}`);
+      if (localRaw) {
+        const parsed = JSON.parse(localRaw);
+        restoreSelectedSession(parsed);
+        return;
+      }
+    } catch (e) {}
+
+    // Check Firestore
+    try {
+      let snap = await getDoc(doc(db, "testSessions", cleanId));
+      if (!snap.exists()) {
+        snap = await getDoc(doc(db, "examSessions", cleanId));
+      }
+      if (snap.exists()) {
+        const remoteData = snap.data();
+        restoreSelectedSession({ ...remoteData, sessionId: cleanId });
+        return;
+      }
+    } catch (err) {}
+
+    alert(`No saved test found for Session ID: "${cleanId}"`);
   };
 
   const saveTestSession = async (targetSessionId: string, statusOverride?: string, resultOverride?: any) => {
@@ -3913,6 +4038,17 @@ const CUETExamView = ({
               <p className="text-slate-500 font-bold uppercase text-[10px] mt-2 tracking-widest">Joint Integrated Programme in Management</p>
             </div>
           </motion.button>
+        </div>
+
+        {/* View / Search Saved Test Results Button */}
+        <div className="pt-4 flex flex-col items-center">
+          <button
+            onClick={loadPastSessions}
+            className="bg-slate-800 hover:bg-slate-700 text-emerald-400 font-black text-xs uppercase px-8 py-3.5 rounded-2xl shadow-xl border border-slate-700 flex items-center gap-2.5 transition-all active:scale-95 cursor-pointer"
+          >
+            <Search className="w-4 h-4 text-emerald-400" />
+            <span>📜 View / Search All Saved Test Results & History</span>
+          </button>
         </div>
       </div>
     );
@@ -6726,6 +6862,174 @@ const CUETExamView = ({
 
     return (
       <div className="fixed inset-0 bg-[#f4f7f9] text-slate-800 z-[90] flex flex-col font-sans">
+        {/* Past Test Sessions Modal */}
+        <AnimatePresence>
+          {isPastModalOpen && (
+            <div className="fixed inset-0 z-[10000] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 font-sans">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-white rounded-3xl max-w-3xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden border border-slate-200"
+              >
+                {/* Modal Header */}
+                <div className="bg-slate-900 text-white p-6 flex justify-between items-center shrink-0">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-blue-500/20 text-blue-400 flex items-center justify-center">
+                      <Search className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black tracking-tight uppercase">Saved Test History & Results</h3>
+                      <p className="text-xs text-slate-400 font-medium">Browse or search all tests stored in database & browser cache</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setIsPastModalOpen(false)} 
+                    className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition-colors"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+
+                {/* Manual Search & Direct Session ID Input */}
+                <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row gap-3">
+                  <div className="flex-1 relative">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input 
+                      type="text"
+                      placeholder="Search by candidate name or exam type..."
+                      value={searchPastQuery}
+                      onChange={(e) => setSearchPastQuery(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text"
+                      placeholder="Enter Session ID (e.g. k8x2m9a1)"
+                      value={manualSessionInput}
+                      onChange={(e) => setManualSessionInput(e.target.value)}
+                      className="px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 w-44"
+                    />
+                    <button 
+                      onClick={handleManualSearchSubmit}
+                      className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-black px-4 py-2.5 rounded-xl uppercase tracking-wider shrink-0 cursor-pointer"
+                    >
+                      Load Test
+                    </button>
+                  </div>
+                </div>
+
+                {/* Modal Body - Session List */}
+                <div className="p-6 overflow-y-auto flex-1 space-y-3">
+                  {isLoadingPastSessions ? (
+                    <div className="py-16 text-center space-y-3">
+                      <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
+                      <p className="text-xs font-bold text-slate-500">Searching database & local storage for saved tests...</p>
+                    </div>
+                  ) : pastSessionsList.filter(item => {
+                      const q = searchPastQuery.toLowerCase().trim();
+                      if (!q) return true;
+                      const name = (item.candidateName || '').toLowerCase();
+                      const sid = (item.sessionId || '').toLowerCase();
+                      const type = (item.examType || '').toLowerCase();
+                      return name.includes(q) || sid.includes(q) || type.includes(q);
+                    }).length === 0 ? (
+                    <div className="py-12 text-center space-y-2 bg-slate-50 rounded-2xl border border-dashed border-slate-300">
+                      <FileText className="w-10 h-10 text-slate-400 mx-auto" />
+                      <p className="text-sm font-extrabold text-slate-700">No matching test sessions found</p>
+                      <p className="text-xs text-slate-500 max-w-md mx-auto">
+                        If you have a direct Session ID or URL from a previous test, paste it in the box above to open it directly!
+                      </p>
+                    </div>
+                  ) : (
+                    pastSessionsList.filter(item => {
+                      const q = searchPastQuery.toLowerCase().trim();
+                      if (!q) return true;
+                      const name = (item.candidateName || '').toLowerCase();
+                      const sid = (item.sessionId || '').toLowerCase();
+                      const type = (item.examType || '').toLowerCase();
+                      return name.includes(q) || sid.includes(q) || type.includes(q);
+                    }).map((item, idx) => {
+                      const isSubmitted = item.cuetStatus === 'finished' || item.cuetStatus === 'submitted' || !!item.cuetResult;
+                      const dateStr = item.updatedAt ? new Date(item.updatedAt).toLocaleString() : 'Recent';
+                      const exTypeUpper = (item.examType || 'NEET').toUpperCase();
+
+                      return (
+                        <div 
+                          key={item.sessionId || idx}
+                          className="bg-white border border-slate-200 rounded-2xl p-4 hover:border-blue-400 hover:shadow-md transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="bg-slate-900 text-white text-[10px] font-black px-2.5 py-0.5 rounded-md uppercase tracking-wider">
+                                {exTypeUpper}
+                              </span>
+                              <span className="text-xs font-black text-slate-800">
+                                {item.candidateName || 'PALLAVI'}
+                              </span>
+                              <span className="text-[11px] font-mono font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                                ID: {item.sessionId}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-slate-500 font-medium pt-1">
+                              <span>🕒 {dateStr}</span>
+                              <span>•</span>
+                              <span>{item.cuetQuestions?.length || 0} Questions</span>
+                              {isSubmitted && item.cuetResult?.score !== undefined && (
+                                <>
+                                  <span>•</span>
+                                  <span className="font-extrabold text-emerald-600">
+                                    Score: {item.cuetResult.score} / {item.cuetResult.total || (item.cuetQuestions?.length * 4)}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+                            <button
+                              onClick={() => restoreSelectedSession(item)}
+                              className={`${
+                                isSubmitted 
+                                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white' 
+                                  : 'bg-blue-600 hover:bg-blue-700 text-white'
+                              } px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider shadow-sm transition-all flex items-center justify-center gap-1.5 w-full sm:w-auto cursor-pointer`}
+                            >
+                              {isSubmitted ? (
+                                <>
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  <span>View Scorecard</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Clock className="w-4 h-4" />
+                                  <span>Resume Test</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Modal Footer */}
+                <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-between items-center text-xs font-medium text-slate-500">
+                  <span>Found {pastSessionsList.length} test record(s)</span>
+                  <button 
+                    onClick={() => setIsPastModalOpen(false)}
+                    className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-xl uppercase text-xs cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
         {/* Floating Toast Notification for Link Copy & Session Restore */}
         <AnimatePresence>
           {(copiedToast || restoredToast) && (
@@ -6807,7 +7111,15 @@ const CUETExamView = ({
                     </button>
                 ))}
             </div>
-            <div className="hidden md:flex items-center gap-4 text-white">
+            <div className="hidden md:flex items-center gap-3 text-white">
+                <button
+                  onClick={loadPastSessions}
+                  className="bg-slate-900/80 hover:bg-slate-900 text-emerald-400 border border-emerald-500/30 px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-md transition-all active:scale-95 cursor-pointer"
+                  title="Search & view past test records"
+                >
+                  <Search className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>All Past Tests</span>
+                </button>
                 <button
                   onClick={copyResumeLinkToClipboard}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-md transition-all active:scale-95 cursor-pointer"
