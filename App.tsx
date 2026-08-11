@@ -2450,47 +2450,81 @@ const CUETExamView = ({
     setIsPastModalOpen(true);
     const sessionMap = new Map<string, any>();
 
-    // 1. Scan LocalStorage for instant cached tests
+    // 0. Include currently active memory state if test questions exist
+    if (cuetQuestions && cuetQuestions.length > 0) {
+      const curSid = sessionId || 'active_session_' + Date.now().toString(36);
+      const activeObj = {
+        sessionId: curSid,
+        examType: examType || 'neet',
+        cuetQuestions: cuetQuestions,
+        cuetAnswers: cuetAnswers || {},
+        cuetStatusMap: cuetStatusMap || {},
+        cuetTimeLeft: cuetTimeLeft ?? 3600,
+        cuetStatus: cuetStatus || 'exam',
+        cuetResult: cuetResult || null,
+        activeQuestion: activeQuestion || 0,
+        candidateName: nestCandidateName || 'PALLAVI',
+        updatedAt: new Date().toISOString()
+      };
+      sessionMap.set(curSid, activeObj);
+      try {
+        localStorage.setItem(`testSession_${curSid}`, JSON.stringify(activeObj));
+      } catch (e) {}
+    }
+
+    // 1. Scan ALL keys in LocalStorage for any cached test / session / result object
     try {
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && key.startsWith('testSession_')) {
-          const raw = localStorage.getItem(key);
-          if (raw) {
-            const item = JSON.parse(raw);
-            if (item && item.sessionId) {
+        if (!key) continue;
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+
+        try {
+          const item = JSON.parse(raw);
+          if (item && typeof item === 'object') {
+            if (item.sessionId) {
               sessionMap.set(item.sessionId, item);
+            } else if (item.cuetQuestions || item.questions || item.cuetAnswers || item.score || item.details) {
+              const synthId = key.replace(/[^a-zA-Z0-9]/g, '_');
+              sessionMap.set(synthId, {
+                sessionId: synthId,
+                examType: item.examType || examType || 'neet',
+                cuetQuestions: item.cuetQuestions || item.questions || [],
+                cuetAnswers: item.cuetAnswers || item.answers || {},
+                cuetStatusMap: item.cuetStatusMap || {},
+                cuetTimeLeft: item.cuetTimeLeft || 0,
+                cuetStatus: item.cuetStatus || (item.score !== undefined || item.details ? 'finished' : 'exam'),
+                cuetResult: item.cuetResult || (item.score !== undefined ? item : null),
+                candidateName: item.candidateName || nestCandidateName || 'PALLAVI',
+                updatedAt: item.updatedAt || new Date().toISOString()
+              });
             }
           }
-        }
+        } catch (parseErr) {}
       }
     } catch (e) {
       console.warn("LocalStorage scan warning:", e);
     }
 
-    // 2. Fetch from Firestore collections testSessions and examSessions
-    try {
-      const q1 = query(collection(db, "testSessions"));
-      const snap1 = await getDocs(q1);
-      snap1.forEach(docSnap => {
-        const data = docSnap.data();
-        if (data && (data.sessionId || docSnap.id)) {
-          sessionMap.set(data.sessionId || docSnap.id, { ...data, sessionId: data.sessionId || docSnap.id });
-        }
-      });
-
-      const q2 = query(collection(db, "examSessions"));
-      const snap2 = await getDocs(q2);
-      snap2.forEach(docSnap => {
-        const data = docSnap.data();
-        if (data && (data.sessionId || docSnap.id)) {
-          if (!sessionMap.has(data.sessionId || docSnap.id)) {
-            sessionMap.set(data.sessionId || docSnap.id, { ...data, sessionId: data.sessionId || docSnap.id });
+    // 2. Fetch from Firestore collections
+    const collectionsToQuery = ["testSessions", "examSessions", "testResults", "results"];
+    for (const collName of collectionsToQuery) {
+      try {
+        const q = query(collection(db, collName));
+        const snap = await getDocs(q);
+        snap.forEach(docSnap => {
+          const data = docSnap.data();
+          if (data && typeof data === 'object') {
+            const sid = data.sessionId || docSnap.id;
+            if (sid && !sessionMap.has(sid)) {
+              sessionMap.set(sid, { ...data, sessionId: sid });
+            }
           }
-        }
-      });
-    } catch (err) {
-      console.warn("Firestore past sessions query warning:", err);
+        });
+      } catch (err) {
+        console.warn(`Firestore collection ${collName} query warning:`, err);
+      }
     }
 
     const list = Array.from(sessionMap.values());
@@ -2511,9 +2545,22 @@ const CUETExamView = ({
     if (data.cuetAnswers) setCuetAnswers(data.cuetAnswers);
     if (data.cuetStatusMap) setCuetStatusMap(data.cuetStatusMap);
     if (data.cuetTimeLeft !== undefined) setCuetTimeLeft(data.cuetTimeLeft);
-    if (data.activeQuestion !== undefined) setActiveQuestion(data.activeQuestion);
     if (data.candidateName) setNestCandidateName(data.candidateName);
     if (data.cuetResult) setCuetResult(data.cuetResult);
+
+    // Smart calculation of active question resume index
+    let targetQ = typeof data.activeQuestion === 'number' ? data.activeQuestion : 0;
+    if (data.cuetAnswers && typeof data.cuetAnswers === 'object') {
+      const ansKeys = Object.keys(data.cuetAnswers).map(Number).filter(n => !isNaN(n));
+      if (ansKeys.length > 0) {
+        const maxAns = Math.max(...ansKeys);
+        if (targetQ === 0 || targetQ <= maxAns) {
+          const totalLen = (data.cuetQuestions && data.cuetQuestions.length > 0) ? data.cuetQuestions.length : 100;
+          targetQ = Math.min(maxAns + 1, totalLen - 1);
+        }
+      }
+    }
+    setActiveQuestion(targetQ);
 
     setSessionId(data.sessionId);
 
@@ -2529,7 +2576,7 @@ const CUETExamView = ({
     } catch (e) {}
 
     setIsPastModalOpen(false);
-    setRestoredToast(`✨ Test Session [${data.sessionId}] loaded successfully!`);
+    setRestoredToast(`⚡ Test Session [${data.sessionId}] loaded! Resumed directly from Question ${targetQ + 1}`);
     setTimeout(() => setRestoredToast(null), 7000);
   };
 
@@ -2715,9 +2762,22 @@ const CUETExamView = ({
             if (data.cuetAnswers) setCuetAnswers(data.cuetAnswers);
             if (data.cuetStatusMap) setCuetStatusMap(data.cuetStatusMap);
             if (data.cuetTimeLeft !== undefined) setCuetTimeLeft(data.cuetTimeLeft);
-            if (data.activeQuestion !== undefined) setActiveQuestion(data.activeQuestion);
             if (data.candidateName) setNestCandidateName(data.candidateName);
             if (data.cuetResult) setCuetResult(data.cuetResult);
+
+            // Smart calculation of active question resume index
+            let targetQ = typeof data.activeQuestion === 'number' ? data.activeQuestion : 0;
+            if (data.cuetAnswers && typeof data.cuetAnswers === 'object') {
+              const ansKeys = Object.keys(data.cuetAnswers).map(Number).filter(n => !isNaN(n));
+              if (ansKeys.length > 0) {
+                const maxAns = Math.max(...ansKeys);
+                if (targetQ === 0 || targetQ <= maxAns) {
+                  const totalLen = (data.cuetQuestions && data.cuetQuestions.length > 0) ? data.cuetQuestions.length : 100;
+                  targetQ = Math.min(maxAns + 1, totalLen - 1);
+                }
+              }
+            }
+            setActiveQuestion(targetQ);
 
             setSessionId(sidFromUrl);
 
@@ -2731,7 +2791,7 @@ const CUETExamView = ({
               setRestoredToast(`🎉 Test already submitted! Direct Scorecard Result loaded for session [${sidFromUrl}]`);
             } else {
               setCuetStatus('exam');
-              setRestoredToast(`⚡ Test Session Restored! Continued directly from Question ${ (data.activeQuestion || 0) + 1 }`);
+              setRestoredToast(`⚡ Test Session Restored! Continued directly from Question ${targetQ + 1}`);
             }
 
             try {
