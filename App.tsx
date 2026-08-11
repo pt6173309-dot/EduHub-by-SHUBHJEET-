@@ -2438,9 +2438,12 @@ const CUETExamView = ({
     return id;
   };
 
-  const saveTestSession = async (targetSessionId: string, statusOverride?: string) => {
+  const saveTestSession = async (targetSessionId: string, statusOverride?: string, resultOverride?: any) => {
     if (!targetSessionId) return;
     try {
+      const finalStatus = statusOverride || cuetStatus || 'exam';
+      const finalResult = resultOverride !== undefined ? resultOverride : cuetResult || null;
+
       const sessionData = {
         sessionId: targetSessionId,
         examType: examType || 'neet',
@@ -2449,17 +2452,31 @@ const CUETExamView = ({
         cuetAnswers: cuetAnswers || {},
         cuetStatusMap: cuetStatusMap || {},
         cuetTimeLeft: cuetTimeLeft ?? 3600,
-        cuetStatus: statusOverride || cuetStatus || 'exam',
+        cuetStatus: finalStatus,
+        cuetResult: finalResult,
         activeQuestion: activeQuestion || 0,
         neetData: neetData || {},
         nestData: nestData || {},
         jipmatData: jipmatData || {},
+        updatedAt: new Date().toISOString()
+      };
+
+      // Save to localStorage for instant offline/browser recovery
+      try {
+        localStorage.setItem('currentTestSessionId', targetSessionId);
+        localStorage.setItem(`testSession_${targetSessionId}`, JSON.stringify(sessionData));
+      } catch (e) {
+        console.warn("localStorage write error:", e);
+      }
+
+      // Save to Firestore for cross-device persistence
+      const firestoreData = {
+        ...sessionData,
         updatedAt: serverTimestamp(),
         createdAt: serverTimestamp()
       };
-
-      await setDoc(doc(db, "testSessions", targetSessionId), sessionData, { merge: true });
-      await setDoc(doc(db, "examSessions", targetSessionId), sessionData, { merge: true });
+      await setDoc(doc(db, "testSessions", targetSessionId), firestoreData, { merge: true });
+      await setDoc(doc(db, "examSessions", targetSessionId), firestoreData, { merge: true });
     } catch (err) {
       console.error("Error saving test session to Firestore:", err);
     }
@@ -2515,7 +2532,7 @@ const CUETExamView = ({
     }
   };
 
-  // On Mount: Check URL for session restore parameter
+  // On Mount: Check URL or localStorage for session restore parameter
   useEffect(() => {
     const restoreSessionFromUrl = async () => {
       try {
@@ -2532,37 +2549,78 @@ const CUETExamView = ({
           }
         }
 
+        if (!sidFromUrl) {
+          const savedSid = localStorage.getItem('currentTestSessionId');
+          if (savedSid) {
+            sidFromUrl = savedSid;
+          }
+        }
+
         if (sidFromUrl) {
-          let snap = await getDoc(doc(db, "testSessions", sidFromUrl));
-          if (!snap.exists()) {
-            snap = await getDoc(doc(db, "examSessions", sidFromUrl));
+          let data: any = null;
+
+          // Check local storage first
+          try {
+            const localRaw = localStorage.getItem(`testSession_${sidFromUrl}`);
+            if (localRaw) {
+              data = JSON.parse(localRaw);
+            }
+          } catch (e) {}
+
+          // Fetch from Firestore
+          try {
+            let snap = await getDoc(doc(db, "testSessions", sidFromUrl));
+            if (!snap.exists()) {
+              snap = await getDoc(doc(db, "examSessions", sidFromUrl));
+            }
+
+            if (snap.exists()) {
+              const remoteData = snap.data();
+              if (remoteData) {
+                data = remoteData;
+              }
+            }
+          } catch (err) {
+            console.warn("Firestore restore fetch warning:", err);
           }
 
-          if (snap.exists()) {
-            const data = snap.data();
-            if (data) {
-              if (data.examType) setExamType(data.examType);
-              if (data.cuetQuestions && data.cuetQuestions.length > 0) setCuetQuestions(data.cuetQuestions);
-              if (data.cuetAnswers) setCuetAnswers(data.cuetAnswers);
-              if (data.cuetStatusMap) setCuetStatusMap(data.cuetStatusMap);
-              if (data.cuetTimeLeft !== undefined) setCuetTimeLeft(data.cuetTimeLeft);
-              if (data.activeQuestion !== undefined) setActiveQuestion(data.activeQuestion);
-              if (data.candidateName) setNestCandidateName(data.candidateName);
-              
-              if (data.cuetStatus) setCuetStatus(data.cuetStatus);
-              else setCuetStatus('exam');
+          if (data) {
+            if (data.examType) setExamType(data.examType);
+            if (data.cuetQuestions && data.cuetQuestions.length > 0) setCuetQuestions(data.cuetQuestions);
+            if (data.cuetAnswers) setCuetAnswers(data.cuetAnswers);
+            if (data.cuetStatusMap) setCuetStatusMap(data.cuetStatusMap);
+            if (data.cuetTimeLeft !== undefined) setCuetTimeLeft(data.cuetTimeLeft);
+            if (data.activeQuestion !== undefined) setActiveQuestion(data.activeQuestion);
+            if (data.candidateName) setNestCandidateName(data.candidateName);
+            if (data.cuetResult) setCuetResult(data.cuetResult);
 
-              setSessionId(sidFromUrl);
-              setRestoredToast(`✨ Test Session Restored! Resume Link: ${window.location.origin}/${data.examType || 'exam'}/${sidFromUrl}`);
-              setTimeout(() => setRestoredToast(null), 9000);
+            setSessionId(sidFromUrl);
+
+            const restoredStatus = data.cuetStatus || (data.cuetResult ? 'finished' : 'exam');
+
+            // CRITICAL DIRECT ROUTING:
+            // If already submitted -> Directly open Result Scorecard
+            // If mid-way in progress -> Directly open Live Exam view where left off
+            if (restoredStatus === 'finished' || restoredStatus === 'submitted' || restoredStatus === 'result') {
+              setCuetStatus('finished');
+              setRestoredToast(`🎉 Test already submitted! Direct Scorecard Result loaded for session [${sidFromUrl}]`);
+            } else {
+              setCuetStatus('exam');
+              setRestoredToast(`⚡ Test Session Restored! Continued directly from Question ${ (data.activeQuestion || 0) + 1 }`);
             }
-          } else {
-            setRestoredToast(`⚠️ Unique Session ID [${sidFromUrl}] not found in database.`);
+
+            try {
+              window.history.replaceState({}, '', `/${data.examType || 'neet'}/${sidFromUrl}`);
+            } catch (e) {}
+
+            setTimeout(() => setRestoredToast(null), 9000);
+          } else if (sidFromUrl) {
+            setRestoredToast(`⚠️ Test Session ID [${sidFromUrl}] not found.`);
             setTimeout(() => setRestoredToast(null), 8000);
           }
         }
       } catch (err) {
-        console.error("Error restoring session from URL:", err);
+        console.error("Error restoring session:", err);
       }
     };
 
@@ -3764,15 +3822,21 @@ const CUETExamView = ({
       };
     });
 
-    setCuetResult({ 
+    const finalResult = { 
       score, 
       correct: correctCount, 
       incorrect: incorrectCount, 
       unattempted: unattemptedCount, 
       total: cuetQuestions.length * correctScore,
       details: detailedResults
-    });
+    };
+
+    setCuetResult(finalResult);
     setCuetStatus('finished');
+
+    if (sessionId) {
+      saveTestSession(sessionId, 'finished', finalResult);
+    }
   };
 
   if (cuetStatus === 'selection') {
