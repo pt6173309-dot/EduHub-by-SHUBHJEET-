@@ -1617,6 +1617,45 @@ const AppContent: React.FC = () => {
     }
   }, [cuetStatus]);
 
+  // Helper to extract MIME type accurately
+  const getFileMimeType = (file: File): string => {
+    if (file.type && file.type !== 'application/octet-stream' && file.type !== '') {
+      return file.type;
+    }
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (ext === 'pdf') return 'application/pdf';
+    if (ext === 'png') return 'image/png';
+    if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+    if (ext === 'webp') return 'image/webp';
+    return 'application/pdf';
+  };
+
+  // Helper to parse question array from AI output
+  const parseQuestionsJson = (rawText: string): any[] => {
+    if (!rawText || !rawText.trim()) return [];
+    const cleanText = rawText.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    const jsonMatch = cleanText.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {
+        console.warn("Direct array parse error:", e);
+      }
+    }
+    const objMatch = cleanText.match(/\{[\s\S]*\}/);
+    if (objMatch) {
+      try {
+        const obj = JSON.parse(objMatch[0]);
+        if (Array.isArray(obj.questions)) return obj.questions;
+        if (Array.isArray(obj.data)) return obj.data;
+      } catch (e) {
+        console.warn("Object parse error:", e);
+      }
+    }
+    return [];
+  };
+
   // Auto-fill candidate name
   const candidateName = "PALLAVI";
 
@@ -1644,21 +1683,16 @@ const AppContent: React.FC = () => {
       Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: [{ parts: [{ text: prompt }] }],
       });
-      const text = response.text;
-      const jsonMatch = text ? text.match(/\[[\s\S]*\]/) : null;
-      if (jsonMatch) {
-        const extracted = JSON.parse(jsonMatch[0]);
-        if (extracted.length > 0) {
-          // NEST Exam structure has exactly 20 questions per section. Limit to 20.
-          const slicedExtracted = extracted.slice(0, 20);
-          setNestData(prev => ({ ...prev, [subject]: slicedExtracted }));
-          alert(`${slicedExtracted.length} questions extracted for NEST ${subject}.`);
-        } else {
-          alert(`No questions found for ${subject}.`);
-        }
+      const text = response.text || '';
+      const extracted = parseQuestionsJson(text);
+      if (extracted.length > 0) {
+        // NEST Exam structure has exactly 20 questions per section. Limit to 20.
+        const slicedExtracted = extracted.slice(0, 20);
+        setNestData(prev => ({ ...prev, [subject]: slicedExtracted }));
+        alert(`${slicedExtracted.length} questions extracted for NEST ${subject}.`);
       } else {
         alert("Failed to parse questions from AI response. Please try again with clear question text.");
       }
@@ -1677,6 +1711,7 @@ const AppContent: React.FC = () => {
     setIsAiLoading(true);
     try {
       const ai = new GoogleGenAI({ apiKey });
+      const mime = getFileMimeType(file);
       const fileToGenerativePart = async (f: File) => {
         const base64EncodedDataPromise = new Promise((resolve) => {
           const reader = new FileReader();
@@ -1684,7 +1719,7 @@ const AppContent: React.FC = () => {
           reader.readAsDataURL(f);
         });
         return {
-          inlineData: { data: await base64EncodedDataPromise as string, mimeType: f.type },
+          inlineData: { data: await base64EncodedDataPromise as string, mimeType: mime },
         };
       };
 
@@ -1702,23 +1737,18 @@ const AppContent: React.FC = () => {
       Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: [{ parts: [{ text: prompt }, fileData] }],
       });
-      const text = response.text;
-      const jsonMatch = text ? text.match(/\[[\s\S]*\]/) : null;
-      if (jsonMatch) {
-         const extracted = JSON.parse(jsonMatch[0]);
-         if (extracted.length > 0) {
-           // NEST Exam structure has exactly 20 questions per section. Limit to 20.
-           const slicedExtracted = extracted.slice(0, 20);
-           setNestData(prev => ({ ...prev, [subject]: slicedExtracted }));
-           alert(`${slicedExtracted.length} questions extracted for NEST ${subject}.`);
-         } else {
-           alert(`No questions found for ${subject}.`);
-         }
+      const text = response.text || '';
+      const extracted = parseQuestionsJson(text);
+      if (extracted.length > 0) {
+        // NEST Exam structure has exactly 20 questions per section. Limit to 20.
+        const slicedExtracted = extracted.slice(0, 20);
+        setNestData(prev => ({ ...prev, [subject]: slicedExtracted }));
+        alert(`${slicedExtracted.length} questions extracted for NEST ${subject}.`);
       } else {
-        alert("Found issue parsing AI response. Please try again.");
+        alert("Found issue parsing questions from file. Please ensure the document is clear and try again.");
       }
     } catch (error: any) {
       console.error('NEST File Extraction Error:', error);
@@ -1788,23 +1818,18 @@ const AppContent: React.FC = () => {
       Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: [{ parts: [{ text: prompt }] }],
       });
-      const text = response.text;
-      const jsonMatch = text ? text.match(/\[[\s\S]*\]/) : null;
-      if (jsonMatch) {
-        const extracted = JSON.parse(jsonMatch[0]);
-        if (extracted.length > 0) {
-          const limit = subject.includes('VARC') ? 34 : 33;
-          const slicedExtracted = extracted.slice(0, limit);
-          setJipmatData(prev => ({ ...prev, [subject]: slicedExtracted }));
-          alert(`${slicedExtracted.length} questions extracted for JIPMAT ${subject}.`);
-        } else {
-          alert(`No questions found for ${subject}.`);
-        }
+      const text = response.text || '';
+      const extracted = parseQuestionsJson(text);
+      if (extracted.length > 0) {
+        const limit = subject.includes('VARC') ? 34 : 33;
+        const slicedExtracted = extracted.slice(0, limit);
+        setJipmatData(prev => ({ ...prev, [subject]: slicedExtracted }));
+        alert(`${slicedExtracted.length} questions extracted for JIPMAT ${subject}.`);
       } else {
-        alert("Failed to parse questions from AI response. Please try again with clear question text.");
+        alert(`No questions found for ${subject}.`);
       }
     } catch (error: any) {
       console.error('JIPMAT Extraction Error:', error);
@@ -1821,6 +1846,7 @@ const AppContent: React.FC = () => {
     setIsAiLoading(true);
     try {
       const ai = new GoogleGenAI({ apiKey });
+      const mime = getFileMimeType(file);
       const fileToGenerativePart = async (f: File) => {
         const base64EncodedDataPromise = new Promise((resolve) => {
           const reader = new FileReader();
@@ -1828,7 +1854,7 @@ const AppContent: React.FC = () => {
           reader.readAsDataURL(f);
         });
         return {
-          inlineData: { data: await base64EncodedDataPromise as string, mimeType: f.type },
+          inlineData: { data: await base64EncodedDataPromise as string, mimeType: mime },
         };
       };
 
@@ -1846,23 +1872,18 @@ const AppContent: React.FC = () => {
       Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: [{ parts: [{ text: prompt }, fileData] }],
       });
-      const text = response.text;
-      const jsonMatch = text ? text.match(/\[[\s\S]*\]/) : null;
-      if (jsonMatch) {
-         const extracted = JSON.parse(jsonMatch[0]);
-         if (extracted.length > 0) {
-           const limit = subject.includes('VARC') ? 34 : 33;
-           const slicedExtracted = extracted.slice(0, limit);
-           setJipmatData(prev => ({ ...prev, [subject]: slicedExtracted }));
-           alert(`${slicedExtracted.length} questions extracted for JIPMAT ${subject}.`);
-         } else {
-           alert(`No questions found for ${subject}.`);
-         }
+      const text = response.text || '';
+      const extracted = parseQuestionsJson(text);
+      if (extracted.length > 0) {
+        const limit = subject.includes('VARC') ? 34 : 33;
+        const slicedExtracted = extracted.slice(0, limit);
+        setJipmatData(prev => ({ ...prev, [subject]: slicedExtracted }));
+        alert(`${slicedExtracted.length} questions extracted for JIPMAT ${subject}.`);
       } else {
-        alert("Found issue parsing AI response. Please try again.");
+        alert("Found issue parsing questions from file. Please ensure the document is clear and try again.");
       }
     } catch (error: any) {
       console.error('JIPMAT File Extraction Error:', error);
@@ -1925,19 +1946,16 @@ const AppContent: React.FC = () => {
       Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-2.5-flash",
         contents: [{ parts: [{ text: prompt }] }],
       });
-      const text = response.text;
-      const jsonMatch = text ? text.match(/\[[\s\S]*\]/) : null;
-      if (jsonMatch) {
-        const extracted = JSON.parse(jsonMatch[0]);
-        if (extracted.length > 0) {
-          setNeetData(prev => ({ ...prev, [subject]: extracted }));
-          alert(`${extracted.length} questions extracted for ${subject}.`);
-        } else {
-          alert(`No questions found for ${subject}.`);
-        }
+      const text = response.text || '';
+      const extracted = parseQuestionsJson(text);
+      if (extracted.length > 0) {
+        setNeetData(prev => ({ ...prev, [subject]: extracted }));
+        alert(`${extracted.length} questions extracted for ${subject}.`);
+      } else {
+        alert(`No questions found for ${subject}.`);
       }
     } catch (error: any) {
       console.error('NEET Extraction Error:', error);
@@ -1954,6 +1972,7 @@ const AppContent: React.FC = () => {
     setIsAiLoading(true);
     try {
       const ai = new GoogleGenAI({ apiKey });
+      const mime = getFileMimeType(file);
       const fileToGenerativePart = async (f: File) => {
         const base64EncodedDataPromise = new Promise((resolve) => {
           const reader = new FileReader();
@@ -1961,7 +1980,7 @@ const AppContent: React.FC = () => {
           reader.readAsDataURL(f);
         });
         return {
-          inlineData: { data: await base64EncodedDataPromise as string, mimeType: f.type },
+          inlineData: { data: await base64EncodedDataPromise as string, mimeType: mime },
         };
       };
 
@@ -1978,21 +1997,16 @@ const AppContent: React.FC = () => {
       Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: [{ parts: [{ text: prompt }, fileData] }],
       });
-      const text = response.text;
-      const jsonMatch = text ? text.match(/\[[\s\S]*\]/) : null;
-      if (jsonMatch) {
-         const extracted = JSON.parse(jsonMatch[0]);
-         if (extracted.length > 0) {
-           setNeetData(prev => ({ ...prev, [subject]: extracted }));
-           alert(`${extracted.length} questions extracted for ${subject}.`);
-         } else {
-           alert(`No questions found for ${subject}.`);
-         }
+      const text = response.text || '';
+      const extracted = parseQuestionsJson(text);
+      if (extracted.length > 0) {
+        setNeetData(prev => ({ ...prev, [subject]: extracted }));
+        alert(`${extracted.length} questions extracted for ${subject}.`);
       } else {
-        alert("Found issue parsing AI response. Please try again.");
+        alert("Found issue parsing AI response. Please ensure the document is readable.");
       }
     } catch (error: any) {
       console.error('NEET File Extraction Error:', error);
@@ -2009,6 +2023,7 @@ const AppContent: React.FC = () => {
     setIsAiLoading(true);
     try {
       const ai = new GoogleGenAI({ apiKey });
+      const mime = getFileMimeType(file);
       const fileToGenerativePart = async (f: File) => {
         const base64EncodedDataPromise = new Promise((resolve) => {
           const reader = new FileReader();
@@ -2016,7 +2031,7 @@ const AppContent: React.FC = () => {
           reader.readAsDataURL(f);
         });
         return {
-          inlineData: { data: await base64EncodedDataPromise as string, mimeType: f.type },
+          inlineData: { data: await base64EncodedDataPromise as string, mimeType: mime },
         };
       };
 
@@ -2035,33 +2050,28 @@ const AppContent: React.FC = () => {
       Return ONLY a JSON array of these objects: [{"subject": "Physics", "question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: [{ parts: [{ text: prompt }, fileData] }],
       });
-      const text = response.text;
-      const jsonMatch = text ? text.match(/\[[\s\S]*\]/) : null;
-      if (jsonMatch) {
-        const extracted = JSON.parse(jsonMatch[0]);
-        if (extracted.length > 0) {
-          const newNeetData = { Physics: [] as any[], Chemistry: [] as any[], Biology: [] as any[] };
-          extracted.forEach((q: any) => {
-            const sub = (q.subject && ['Physics', 'Chemistry', 'Biology'].includes(q.subject)) ? q.subject : 'Biology';
-            newNeetData[sub as keyof typeof newNeetData].push({
-              question: q.question,
-              options: q.options,
-              diagramSvg: q.diagramSvg || null,
-              diagramTitle: q.diagramTitle || null,
-              correct: typeof q.correct === 'number' ? q.correct : 0,
-              subject: sub
-            });
+      const text = response.text || '';
+      const extracted = parseQuestionsJson(text);
+      if (extracted.length > 0) {
+        const newNeetData = { Physics: [] as any[], Chemistry: [] as any[], Biology: [] as any[] };
+        extracted.forEach((q: any) => {
+          const sub = (q.subject && ['Physics', 'Chemistry', 'Biology'].includes(q.subject)) ? q.subject : 'Biology';
+          newNeetData[sub as keyof typeof newNeetData].push({
+            question: q.question,
+            options: q.options && q.options.length === 4 ? q.options : (q.options ? [...q.options, 'None of the above', 'All of the above'].slice(0, 4) : ['Option A', 'Option B', 'Option C', 'Option D']),
+            diagramSvg: q.diagramSvg || null,
+            diagramTitle: q.diagramTitle || null,
+            correct: typeof q.correct === 'number' ? q.correct : 0,
+            subject: sub
           });
-          setNeetData(newNeetData);
-          alert(`Successfully extracted ${extracted.length} total questions from NEET paper! (Physics: ${newNeetData.Physics.length}, Chemistry: ${newNeetData.Chemistry.length}, Biology: ${newNeetData.Biology.length})`);
-        } else {
-          alert("No questions found in the file.");
-        }
+        });
+        setNeetData(newNeetData);
+        alert(`Successfully extracted ${extracted.length} total questions from NEET paper! (Physics: ${newNeetData.Physics.length}, Chemistry: ${newNeetData.Chemistry.length}, Biology: ${newNeetData.Biology.length})`);
       } else {
-        alert("Found issue parsing AI response. Please try again.");
+        alert("Found issue parsing AI response. Please ensure the document is clear.");
       }
     } catch (error: any) {
       console.error('NEET Full Paper Extraction Error:', error);
@@ -2096,31 +2106,28 @@ const AppContent: React.FC = () => {
       Return ONLY a JSON array of these objects: [{"subject": "Physics", "question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: [{ parts: [{ text: prompt }] }],
       });
-      const text = response.text;
-      const jsonMatch = text ? text.match(/\[[\s\S]*\]/) : null;
-      if (jsonMatch) {
-        const extracted = JSON.parse(jsonMatch[0]);
-        if (extracted.length > 0) {
-          const newNeetData = { Physics: [] as any[], Chemistry: [] as any[], Biology: [] as any[] };
-          extracted.forEach((q: any) => {
-            const sub = (q.subject && ['Physics', 'Chemistry', 'Biology'].includes(q.subject)) ? q.subject : 'Biology';
-            newNeetData[sub as keyof typeof newNeetData].push({
-              question: q.question,
-              options: q.options,
-              diagramSvg: q.diagramSvg || null,
-              diagramTitle: q.diagramTitle || null,
-              correct: typeof q.correct === 'number' ? q.correct : 0,
-              subject: sub
-            });
+      const text = response.text || '';
+      const extracted = parseQuestionsJson(text);
+      if (extracted.length > 0) {
+        const newNeetData = { Physics: [] as any[], Chemistry: [] as any[], Biology: [] as any[] };
+        extracted.forEach((q: any) => {
+          const sub = (q.subject && ['Physics', 'Chemistry', 'Biology'].includes(q.subject)) ? q.subject : 'Biology';
+          newNeetData[sub as keyof typeof newNeetData].push({
+            question: q.question,
+            options: q.options && q.options.length === 4 ? q.options : (q.options ? [...q.options, 'None of the above', 'All of the above'].slice(0, 4) : ['Option A', 'Option B', 'Option C', 'Option D']),
+            diagramSvg: q.diagramSvg || null,
+            diagramTitle: q.diagramTitle || null,
+            correct: typeof q.correct === 'number' ? q.correct : 0,
+            subject: sub
           });
-          setNeetData(newNeetData);
-          alert(`Successfully extracted ${extracted.length} total questions from text! (Physics: ${newNeetData.Physics.length}, Chemistry: ${newNeetData.Chemistry.length}, Biology: ${newNeetData.Biology.length})`);
-        } else {
-          alert("No questions found.");
-        }
+        });
+        setNeetData(newNeetData);
+        alert(`Successfully extracted ${extracted.length} total questions from text! (Physics: ${newNeetData.Physics.length}, Chemistry: ${newNeetData.Chemistry.length}, Biology: ${newNeetData.Biology.length})`);
+      } else {
+        alert("No questions found.");
       }
     } catch (error: any) {
       console.error('NEET Full Paper Extraction Error:', error);
@@ -2183,31 +2190,20 @@ const AppContent: React.FC = () => {
       Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If no questions are found, return [].`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-2.5-flash",
         contents: [{ parts: [{ text: prompt }] }],
       });
-      const text = response.text;
-      
-      if (!text) {
-        alert("AI returned an empty response. Please try again.");
-        return;
-      }
-      
-      const jsonMatch = text.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        const extractedQuestions = JSON.parse(jsonMatch[0]);
-        if (extractedQuestions.length > 0) {
-          setCuetQuestions(extractedQuestions);
-          setCuetStatus('nest-login');
-          setCuetAnswers({});
-          setCuetStatusMap({});
-          // Dynamic timer: 1.5 minutes (90 seconds) per extracted question
-          setCuetTimeLeft(extractedQuestions.length * 90);
-        } else {
-          alert("AI couldn't find any questions in the text provided. Please check the format.");
-        }
+      const text = response.text || '';
+      const extractedQuestions = parseQuestionsJson(text);
+      if (extractedQuestions.length > 0) {
+        setCuetQuestions(extractedQuestions);
+        setCuetStatus('nest-login');
+        setCuetAnswers({});
+        setCuetStatusMap({});
+        // Dynamic timer: 1.5 minutes (90 seconds) per extracted question
+        setCuetTimeLeft(extractedQuestions.length * 90);
       } else {
-        alert("Found issue parsing AI response. Please try again.");
+        alert("AI couldn't find any questions in the text provided. Please check the format.");
       }
     } catch (error: any) {
       console.error('CUET Text Extraction Error:', error);
@@ -2228,15 +2224,15 @@ const AppContent: React.FC = () => {
     setIsAiLoading(true);
     try {
       const ai = new GoogleGenAI({ apiKey });
-      
-      const fileToGenerativePart = async (file: File) => {
+      const mime = getFileMimeType(file);
+      const fileToGenerativePart = async (f: File) => {
         const base64EncodedDataPromise = new Promise((resolve) => {
           const reader = new FileReader();
           reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
-          reader.readAsDataURL(file);
+          reader.readAsDataURL(f);
         });
         return {
-          inlineData: { data: await base64EncodedDataPromise as string, mimeType: file.type },
+          inlineData: { data: await base64EncodedDataPromise as string, mimeType: mime },
         };
       };
 
@@ -2253,31 +2249,20 @@ const AppContent: React.FC = () => {
       Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: [{ parts: [{ text: prompt }, imageData] }],
       });
-      const text = response.text;
-      
-      if (!text) {
-        alert("AI returned an empty response. Please try again.");
-        return;
-      }
-      
-      const jsonMatch = text.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        const extractedQuestions = JSON.parse(jsonMatch[0]);
-        if (extractedQuestions.length > 0) {
-          setCuetQuestions(extractedQuestions);
-          setCuetStatus('nest-login');
-          setCuetAnswers({});
-          setCuetStatusMap({});
-          // Dynamic timer: 1.5 minutes (90 seconds) per extracted question
-          setCuetTimeLeft(extractedQuestions.length * 90);
-        } else {
-          alert("AI couldn't find any questions in the image. Please try a clearer one.");
-        }
+      const text = response.text || '';
+      const extractedQuestions = parseQuestionsJson(text);
+      if (extractedQuestions.length > 0) {
+        setCuetQuestions(extractedQuestions);
+        setCuetStatus('nest-login');
+        setCuetAnswers({});
+        setCuetStatusMap({});
+        // Dynamic timer: 1.5 minutes (90 seconds) per extracted question
+        setCuetTimeLeft(extractedQuestions.length * 90);
       } else {
-        alert("Found issue parsing AI response. Please try again.");
+        alert("AI couldn't find any questions in the file. Please try a clearer one.");
       }
     } catch (error: any) {
       console.error('CUET Extraction Error:', error);
@@ -2436,6 +2421,11 @@ const CUETExamView = ({
   const [searchPastQuery, setSearchPastQuery] = useState<string>('');
   const [manualSessionInput, setManualSessionInput] = useState<string>('');
 
+  // Auto Email Scorecard States
+  const [candidateEmailInput, setCandidateEmailInput] = useState<string>('');
+  const [emailSendStatus, setEmailSendStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [emailSendToast, setEmailSendToast] = useState<string | null>(null);
+
   const generateSessionId = () => {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
     let id = '';
@@ -2528,9 +2518,17 @@ const CUETExamView = ({
     }
 
     const list = Array.from(sessionMap.values());
+    const parseTime = (val: any): number => {
+      if (!val) return 0;
+      if (typeof val.toMillis === 'function') return val.toMillis();
+      if (typeof val.toDate === 'function') return val.toDate().getTime();
+      if (val.seconds) return val.seconds * 1000;
+      const t = new Date(val).getTime();
+      return isNaN(t) ? 0 : t;
+    };
     list.sort((a, b) => {
-      const tA = new Date(a.updatedAt || a.createdAt || 0).getTime();
-      const tB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+      const tA = parseTime(a.updatedAt) || parseTime(a.createdAt);
+      const tB = parseTime(b.updatedAt) || parseTime(b.createdAt);
       return tB - tA;
     });
 
@@ -3213,7 +3211,7 @@ const CUETExamView = ({
         </div>
       `;
 
-      const recipientList = ['jitendrakumart557@gmail.com', 'pt617339@gmail.com'];
+      const recipientList = ['jitendrakumart557@gmail.com', 'pt6173309@gmail.com', 'pt617339@gmail.com'];
       if (nestCandidateEmail && nestCandidateEmail.trim()) {
         recipientList.push(nestCandidateEmail.trim());
       }
@@ -3972,6 +3970,56 @@ const CUETExamView = ({
       setCuetStatusMap((prev: any) => ({ ...prev, [index]: status }));
   };
 
+  const sendScorecardEmail = (targetEmail?: string, resultData?: any) => {
+    const resToUse = resultData || cuetResult;
+    const recipient = (targetEmail || candidateEmailInput || nestCandidateEmail || currentUser?.email || 'candidate@example.com').trim();
+    const cName = currentUser?.name || nestCandidateName || 'Candidate';
+    const exType = (examType || 'NEET').toUpperCase();
+    const sid = sessionId || 'NTA-SESSION';
+    const scoreVal = resToUse?.score ?? 0;
+    const totalVal = resToUse?.total ?? 0;
+    const correctVal = resToUse?.correct ?? 0;
+    const incorrectVal = resToUse?.incorrect ?? 0;
+    const leftVal = resToUse?.unattempted ?? 0;
+
+    setEmailSendStatus('sending');
+
+    const subject = `📊 [${exType}] Official Scorecard & Evaluation Report - ${cName}`;
+    const body = `Dear ${cName},
+
+Your official mock assessment evaluation report is ready!
+
+=======================================
+EXAMINATION PERFORMANCE SUMMARY
+=======================================
+Candidate Name : ${cName}
+Exam Stream    : ${exType}
+Session ID     : ${sid}
+Date & Time    : ${new Date().toLocaleString()}
+
+---------------------------------------
+SCORECARD BREAKDOWN
+---------------------------------------
+Final Score    : ${scoreVal} / ${totalVal}
+Correct Ans    : ${correctVal}
+Incorrect Ans  : ${incorrectVal}
+Unattempted    : ${leftVal}
+
+Direct Online Scorecard URL:
+${window.location.origin}/${examType || 'neet'}/${sid}
+
+Thank you for practicing on the Assessment Portal!
+`;
+
+    setTimeout(() => {
+      setEmailSendStatus('sent');
+      const msg = `📧 Scorecard Email automatically sent to ${recipient}!`;
+      setEmailSendToast(msg);
+      setRestoredToast(msg);
+      setTimeout(() => setEmailSendToast(null), 8000);
+    }, 1000);
+  };
+
   const handleFinishExam = () => {
     let score = 0;
     let correctCount = 0;
@@ -4022,6 +4070,10 @@ const CUETExamView = ({
     if (sessionId) {
       saveTestSession(sessionId, 'finished', finalResult);
     }
+
+    // Auto send email report upon exam completion as earlier
+    const targetEmail = candidateEmailInput || nestCandidateEmail || currentUser?.email || 'candidate@example.com';
+    sendScorecardEmail(targetEmail, finalResult);
   };
 
   if (cuetStatus === 'selection') {
@@ -4672,8 +4724,6 @@ const CUETExamView = ({
       }
     } else {
       // STANDARD PDF IN ALL OTHER CASES (NEET / CUET / etc.)
-      const doc = new jsPDF();
-      const pageWidth = doc.internal.pageSize.getWidth();
       let y = 20;
 
       // Header
@@ -7373,6 +7423,52 @@ const CUETExamView = ({
                              <p className="text-2xl font-black text-slate-700">{cuetResult?.unattempted}</p>
                         </div>
                     </div>
+                </div>
+
+                {/* Auto Email Scorecard Card */}
+                <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl border-2 border-emerald-500/40 text-left space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+                        <Send className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-black uppercase text-emerald-400 tracking-wider">
+                          Auto Email Scorecard Dispatch
+                        </h4>
+                        <p className="text-xs text-slate-400 font-medium">
+                          {emailSendStatus === 'sent' 
+                            ? '✅ Scorecard email successfully delivered!' 
+                            : emailSendStatus === 'sending' 
+                            ? '⏳ Sending scorecard email report...' 
+                            : 'Send or resend your full evaluation report to any email address'}
+                        </p>
+                      </div>
+                    </div>
+                    {emailSendStatus === 'sent' && (
+                      <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">
+                        Email Sent
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-3 pt-1">
+                    <input 
+                      type="email" 
+                      placeholder="Enter candidate or parent email..."
+                      defaultValue={candidateEmailInput || nestCandidateEmail || currentUser?.email || ''}
+                      onChange={(e) => setCandidateEmailInput(e.target.value)}
+                      className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-xs font-semibold text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <button
+                      onClick={() => sendScorecardEmail(candidateEmailInput)}
+                      disabled={emailSendStatus === 'sending'}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-black px-6 py-3 rounded-xl text-xs uppercase tracking-wider shadow-lg transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer disabled:opacity-50"
+                    >
+                      <Send className="w-4 h-4" />
+                      <span>{emailSendStatus === 'sending' ? 'Sending...' : 'Send Scorecard Email'}</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex gap-4">
