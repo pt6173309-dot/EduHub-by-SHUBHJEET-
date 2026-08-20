@@ -2651,7 +2651,12 @@ const CUETExamView = ({
       if (response.ok) {
         console.log(`Successfully dispatched ${params.event} email intimation to ${toValue}`);
       } else {
-        const errorData = await response.json();
+        if (response.status === 401) {
+          setGmailToken(null);
+          localStorage.removeItem('gmailToken');
+          console.warn(`Gmail access token expired during ${params.event} intimation dispatch.`);
+        }
+        const errorData = await response.json().catch(() => ({}));
         console.warn(`Failed to dispatch ${params.event} email:`, errorData);
       }
     } catch (err) {
@@ -3469,10 +3474,14 @@ const CUETExamView = ({
       }
 
       setEmailSentStatus('success');
+      setEmailSendStatus('sent');
+      setEmailSendToast(`✅ Evaluation report email delivered successfully!`);
     } catch (err: any) {
       console.error("Email send failed:", err);
       setEmailSentStatus('failure');
+      setEmailSendStatus('error');
       setEmailErrorMsg(err?.message || String(err));
+      setEmailSendToast(`⚠️ Email send failed: ${err?.message || String(err)}`);
     }
   };
 
@@ -3513,23 +3522,406 @@ const CUETExamView = ({
           console.error("Failed to write gmail token to Firestore:", dbErr);
         }
 
+        setEmailSendToast(`✅ Google Account [${userEmail || 'Connected'}] linked for Gmail dispatch!`);
+        setTimeout(() => setEmailSendToast(null), 6000);
+
         if (cuetStatus === 'finished' && cuetResult) {
-          sendResultEmail(credential.accessToken, cuetResult);
+          sendScorecardEmail(candidateEmailInput, credential.accessToken);
         }
       }
     } catch (err: any) {
       console.error("Gmail authorization issue:", err);
       setEmailSentStatus('failure');
+      setEmailSendStatus('error');
       const errCode = err?.code || "";
       const errMsg = err?.message || "";
       
       if (errCode === 'auth/popup-closed-by-user' || errCode === 'auth/cancelled-popup-request' || errMsg.includes('closed') || errMsg.includes('cancel')) {
-        setGmailAuthError("The Google sign-in window was closed. To link your account: click 'Authorize Gmail Account' again, then click on 'Advanced' -> 'Go to react-example (unsafe)' inside the popup to bypass the validation screen.");
+        setGmailAuthError("The Google sign-in window was closed. To link your account: click 'Authorize Gmail Account' again, then click 'Advanced' -> 'Go to react-example (unsafe)' inside the popup to bypass the validation screen.");
         setEmailErrorMsg("Authorization popup was closed. Click 'Advanced' -> 'Go to react-example (unsafe)' to proceed.");
+        setEmailSendToast("Google authorization popup was closed. Click 'Connect Gmail' to retry.");
       } else {
         setGmailAuthError(errMsg || "Google Authentication failed. Please try again.");
         setEmailErrorMsg(errMsg || "Google Authentication failed. Please try again.");
+        setEmailSendToast(errMsg || "Google Authentication failed. Please try again.");
       }
+    }
+  };
+
+  const sendScorecardEmail = async (customRecipient?: string, overrideResultOrToken?: any, explicitToken?: string) => {
+    let overrideResult: any = null;
+    let overrideToken: string | undefined = explicitToken;
+
+    if (typeof overrideResultOrToken === 'string') {
+      overrideToken = overrideResultOrToken;
+    } else if (overrideResultOrToken && typeof overrideResultOrToken === 'object') {
+      overrideResult = overrideResultOrToken;
+    }
+
+    let activeToken = overrideToken || gmailToken;
+    
+    // If no active token, trigger Google sign-in directly
+    if (!activeToken) {
+      await handleGoogleSignIn();
+      return;
+    }
+
+    const results = overrideResult || cuetResult;
+    if (!results) {
+      setEmailSendStatus('error');
+      setEmailSendToast("No test results available to dispatch.");
+      return;
+    }
+
+    setEmailSendStatus('sending');
+    setEmailSendToast("Dispatching scorecard report email...");
+
+    try {
+      const name = currentUser?.name || nestCandidateName || "PALLAVI";
+      const rollNo = nestUserId || "N/A";
+      const formattedExamType = examType === 'nest' ? 'NEST Exam' : examType === 'jipmat' ? 'JIPMAT' : examType === 'neet' ? 'NEET UG' : 'CUET';
+      const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+
+      const formatSecToMinSec = (s: number) => {
+        const mins = Math.floor(s / 60);
+        const secs = Math.round(s % 60);
+        return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+      };
+
+      const totalTimeSpentSec = 3600 - cuetTimeLeft;
+      const overallTimeSpentStr = formatSecToMinSec(totalTimeSpentSec);
+
+      const correct = results.correct ?? 0;
+      const incorrect = results.incorrect ?? 0;
+      const left = results.unattempted ?? 0;
+      const totalQuestions = results.details?.length ?? 20;
+      const score = results.score ?? 0;
+      const totalMaxScore = results.total ?? 0;
+      const overallAccuracy = (correct + incorrect) > 0 ? (correct / (correct + incorrect)) * 100 : 0;
+      const attemptRatio = (((correct + incorrect) / Math.max(1, totalQuestions)) * 100).toFixed(0);
+
+      let subjectRows = '';
+      if (examType === 'nest' || examType === 'jipmat') {
+        const subjectsList = examType === 'jipmat'
+          ? ['Quantitative Aptitude (QA)', 'Data Interpretation & Logical Reasoning (DILR)', 'Verbal Ability & Reading Comprehension (VARC)']
+          : ['Biology', 'Chemistry', 'Physics'];
+        const detailsList = results.details || [];
+        
+        subjectsList.forEach((sub, idx) => {
+          const subQuestions = detailsList.filter((q: any) => q.subject?.toLowerCase() === sub.toLowerCase() || q.subject === sub);
+          const subCorrect = subQuestions.filter((q: any) => q.isCorrect).length;
+          const subIncorrect = subQuestions.filter((q: any) => q.selectedIdx !== -1 && !q.isCorrect).length;
+          const subLeft = subQuestions.filter((q: any) => q.selectedIdx === -1).length;
+          const schemeMul = examType === 'jipmat' ? 4 : 3;
+          const subScore = subCorrect * schemeMul - subIncorrect;
+          const subMax = subQuestions.length * schemeMul;
+          const subAccuracyVal = (subCorrect + subIncorrect) > 0 ? ((subCorrect / (subCorrect + subIncorrect)) * 100).toFixed(1) + "%" : "0.0%";
+          
+          const subAnswered = subCorrect + subIncorrect;
+          const overallAnswered = correct + incorrect || 1;
+          const subTimeSpentSec = Math.round((subAnswered / overallAnswered) * totalTimeSpentSec);
+          const subTimeStr = formatSecToMinSec(subTimeSpentSec);
+          const rowBg = idx % 2 === 0 ? '#f8fafc' : '#eff6ff';
+
+          subjectRows += `
+            <tr style="background-color: ${rowBg}; border-bottom: 1px solid #e2e8f0; font-size: 11px; color: #334155;">
+              <td style="padding: 10px; font-weight: bold; color: #1e293b;">${sub.toUpperCase()}</td>
+              <td style="padding: 10px; text-align: center;">${subQuestions.length}</td>
+              <td style="padding: 10px; text-align: center; color: #166534; font-weight: bold;">+${subCorrect}</td>
+              <td style="padding: 10px; text-align: center; color: #991b1b; font-weight: bold;">-${subIncorrect}</td>
+              <td style="padding: 10px; text-align: center; color: #64748b;">${subLeft}</td>
+              <td style="padding: 10px; text-align: center; font-weight: bold; color: #0f172a;">${subScore} / ${subMax}</td>
+              <td style="padding: 10px; text-align: center;">${subTimeStr}</td>
+              <td style="padding: 10px; text-align: center; font-weight: bold; color: #2563eb;">${subAccuracyVal}</td>
+            </tr>
+          `;
+        });
+
+        subjectRows += `
+          <tr style="background-color: #1e293b; color: #ffffff; font-weight: bold; font-size: 11px;">
+            <td style="padding: 10px;">TOTALS</td>
+            <td style="padding: 10px; text-align: center;">${totalQuestions}</td>
+            <td style="padding: 10px; text-align: center; color: #4ade80;">+${correct}</td>
+            <td style="padding: 10px; text-align: center; color: #f87171;">-${incorrect}</td>
+            <td style="padding: 10px; text-align: center; color: #94a3b8;">${left}</td>
+            <td style="padding: 10px; text-align: center;">${score} / ${totalMaxScore}</td>
+            <td style="padding: 10px; text-align: center;">${overallTimeSpentStr}</td>
+            <td style="padding: 10px; text-align: center; color: #60a5fa;">${overallAccuracy.toFixed(1)}%</td>
+          </tr>
+        `;
+      }
+
+      let selectivityHtml = '';
+      if (examType === 'nest') {
+        const niserInfo = getNestEstimation(score);
+        const rgbColor = `rgb(${niserInfo.badgeColor[0]}, ${niserInfo.badgeColor[1]}, ${niserInfo.badgeColor[2]})`;
+        
+        selectivityHtml = `
+          <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; margin-top: 16px; border-radius: 12px;">
+            <h2 style="margin: 0 0 12px 0; font-size: 15px; font-weight: bold; color: #0f172a; border-bottom: 2px solid #f1f5f9; padding-bottom: 6px;">NISER Selection Zone & Benchmark Analysis</h2>
+            
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 12px;">
+              <tr>
+                <td style="padding: 6px 0; color: #64748b; width: 60%;"><strong>Estimated Percentile Range:</strong></td>
+                <td style="padding: 6px 0; color: #166534; font-weight: bold; font-size: 14px;">${niserInfo.percentile}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>NISER Selection Chance (General):</strong></td>
+                <td style="padding: 6px 0; color: ${rgbColor}; font-weight: bold;">${niserInfo.chanceGen}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>NISER Selection Chance (EWS):</strong></td>
+                <td style="padding: 6px 0; color: ${rgbColor}; font-weight: bold;">${niserInfo.chanceEws}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>Suggestive Critique State:</strong></td>
+                <td style="padding: 6px 0; color: #0f172a; font-weight: bold;">${score >= 95 ? "Highly Receptive Zone" : score >= 80 ? "Progressive Border" : "Needs Re-Evaluation"}</td>
+              </tr>
+            </table>
+
+            <div style="background-color: #eff6ff; border-left: 4px solid #2563eb; padding: 12px; border-radius: 4px; font-size: 12.5px; line-height: 1.5; color: #1e3a8a;">
+              <strong>Diagnostic Critique & Core Suggestions:</strong><br/>
+              ${niserInfo.suggestion}
+            </div>
+          </div>
+        `;
+      }
+
+      let questionAnalysisHtml = '';
+      (results.details || []).forEach((item: any, idx: number) => {
+        const isQCorrect = item.isCorrect;
+        const isQUnattempted = item.selectedIdx === -1;
+        
+        let statusText = '';
+        let statusColor = '';
+        let statusBg = '';
+        
+        if (isQUnattempted) {
+          statusText = 'Unattempted';
+          statusColor = '#475569';
+          statusBg = '#f1f5f9';
+        } else if (isQCorrect) {
+          statusText = 'Correct';
+          statusColor = '#15803d';
+          statusBg = '#f0fdf4';
+        } else {
+          const correctChoice = String.fromCharCode(65 + item.correct);
+          const candidateChoice = String.fromCharCode(65 + item.selectedIdx);
+          statusText = `Incorrect (Selected: ${candidateChoice}, Correct: ${correctChoice})`;
+          statusColor = '#b91c1c';
+          statusBg = '#fef2f2';
+        }
+
+        let optionsHtml = '';
+        item.options.forEach((opt: string, optIdx: number) => {
+          const isCorrectOption = optIdx === item.correct;
+          const isSelectedOption = optIdx === item.selectedIdx;
+          
+          let optBg = '#ffffff';
+          let optBorder = '#e2e8f0';
+          let optColor = '#1e293b';
+          
+          if (isCorrectOption) {
+            optBg = '#15803d';
+            optColor = '#ffffff';
+            optBorder = '#15803d';
+          } else if (isSelectedOption) {
+            optBg = '#b91c1c';
+            optColor = '#ffffff';
+            optBorder = '#b91c1c';
+          }
+
+          optionsHtml += `
+            <div style="background-color: ${optBg}; border: 1px solid ${optBorder}; color: ${optColor}; padding: 8px 12px; margin-bottom: 6px; border-radius: 6px; font-size: 13px;">
+              ${String.fromCharCode(65 + optIdx)}) ${opt}
+            </div>
+          `;
+        });
+
+        const hasDiagram = item.diagramSvg ? '<em style="color:#64748b; font-size:11px; display:block; margin: 4px 0 8px 0;">[Contains embedded math/science vector diagram]</em>' : '';
+        const qSub = item.subject ? `<span style="font-size:11px; font-weight:bold; color:#4f46e5; text-transform:uppercase;">[${item.subject}]</span>` : '';
+
+        questionAnalysisHtml += `
+          <div style="background-color: #ffffff; border: 1px solid #e2e8f0; padding: 16px; margin-bottom: 12px; border-radius: 8px;">
+            <p style="margin: 0 0 4px 0; font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: bold;">Question ${idx + 1} ${qSub}</p>
+            <p style="margin: 0 0 10px 0; font-size: 14px; font-weight: bold; color: #0f172a;">${item.question}</p>
+            ${hasDiagram}
+            <div style="margin-top: 8px;">
+              ${optionsHtml}
+            </div>
+            <div style="margin-top: 10px; display: inline-block; background-color: ${statusBg}; color: ${statusColor}; padding: 4px 10px; font-size: 12px; font-weight: bold; border-radius: 12px;">
+              Status: ${statusText}
+            </div>
+          </div>
+        `;
+      });
+
+      const emailHtmlBody = `
+        <div style="font-family: Arial, sans-serif; background-color: #f8fafc; padding: 24px; color: #1e293b; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px;">
+          <div style="background-color: #1e293b; padding: 24px; text-align: center; border-radius: 12px 12px 0 0; color: #ffffff;">
+            <h1 style="margin: 0; font-size: 20px; font-weight: bold; letter-spacing: -0.5px;">${formattedExamType} 2026</h1>
+            <p style="margin: 4px 0 0 0; font-size: 12px; color: #93c5fd; font-weight: bold; text-transform: uppercase;">Official Examination Performance Report</p>
+          </div>
+
+          <div style="background-color: #ffffff; border-left: 4px solid #4f46e5; padding: 16px; margin-top: 16px; border-radius: 0 12px 12px 0; background-color: #eef2ff;">
+            <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #312e81;">
+              <strong>Software Developer Intimation:</strong> This performance report has been compiled and dispatched automatically by <strong>Shubhjeet Ram Tripathi (Software Developer)</strong> on behalf of the candidate.
+            </p>
+          </div>
+
+          <div style="background-color: #ffffff; padding: 20px; margin-top: 16px; border-radius: 12px; border: 1px solid #e2e8f0;">
+            <h2 style="margin: 0 0 12px 0; font-size: 15px; font-weight: bold; color: #0f172a; border-bottom: 2px solid #f1f5f9; padding-bottom: 6px;">Candidate Profile</h2>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+              <tr>
+                <td style="padding: 4px 0; color: #64748b; width: 40%;"><strong>Candidate Name:</strong></td>
+                <td style="padding: 4px 0; color: #0f172a;">${name}</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px 0; color: #64748b;"><strong>Roll / Login ID:</strong></td>
+                <td style="padding: 4px 0; color: #0f172a;">${rollNo}</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px 0; color: #64748b;"><strong>Evaluation Stream:</strong></td>
+                <td style="padding: 4px 0; color: #0f172a;">${formattedExamType}</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px 0; color: #64748b;"><strong>Date of Exam:</strong></td>
+                <td style="padding: 4px 0; color: #0f172a;">${timestamp}</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px 0; color: #64748b;"><strong>Proctor Shield:</strong></td>
+                <td style="padding: 4px 0; color: #16a34a; font-weight: bold;">TCS iON Security Shield Enforced</td>
+              </tr>
+            </table>
+          </div>
+
+          <div style="background-color: #ffffff; padding: 24px; margin-top: 16px; border-radius: 12px; border: 1px solid #e2e8f0; text-align: center;">
+            <p style="margin: 0; font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: bold; letter-spacing: 1px;">Overall Marks Obtained</p>
+            <h3 style="margin: 8px 0; font-size: 44px; font-weight: 800; color: #0f172a;">${score} <span style="font-size: 18px; color: #64748b;">/ ${totalMaxScore}</span></h3>
+            
+            <table style="width: 100%; border-collapse: collapse; margin-top: 12px;">
+              <tr>
+                <td style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px; text-align: center; width: 25%;">
+                  <p style="margin: 0; font-size: 10px; color: #166534; font-weight: bold; text-transform: uppercase;">Correct</p>
+                  <p style="margin: 2px 0 0 0; font-size: 18px; font-weight: bold; color: #15803d;">${correct}</p>
+                </td>
+                <td style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px; text-align: center; width: 25%;">
+                  <p style="margin: 0; font-size: 10px; color: #991b1b; font-weight: bold; text-transform: uppercase;">Incorrect</p>
+                  <p style="margin: 2px 0 0 0; font-size: 18px; font-weight: bold; color: #b91c1c;">${incorrect}</p>
+                </td>
+                <td style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; text-align: center; width: 25%;">
+                  <p style="margin: 0; font-size: 10px; color: #475569; font-weight: bold; text-transform: uppercase;">Left</p>
+                  <p style="margin: 2px 0 0 0; font-size: 18px; font-weight: bold; color: #334155;">${left}</p>
+                </td>
+                <td style="background-color: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px; text-align: center; width: 25%;">
+                  <p style="margin: 0; font-size: 10px; color: #1e40af; font-weight: bold; text-transform: uppercase;">Accuracy</p>
+                  <p style="margin: 2px 0 0 0; font-size: 18px; font-weight: bold; color: #2563eb;">${overallAccuracy.toFixed(1)}%</p>
+                </td>
+              </tr>
+            </table>
+
+            <table style="width: 100%; border-collapse: collapse; margin-top: 16px;">
+              <tr>
+                <td style="font-size: 12px; color: #64748b; text-align: left;"><strong>Total Time Spent:</strong> ${overallTimeSpentStr}</td>
+                <td style="font-size: 12px; color: #64748b; text-align: right;"><strong>Attempt Rate:</strong> ${correct + incorrect} / ${totalQuestions} (${attemptRatio}%)</td>
+              </tr>
+            </table>
+          </div>
+
+          ${selectivityHtml}
+
+          ${(examType === 'nest' || examType === 'jipmat') ? `
+          <div style="background-color: #ffffff; padding: 20px; margin-top: 16px; border-radius: 12px; border: 1px solid #e2e8f0;">
+            <h2 style="margin: 0 0 12px 0; font-size: 15px; font-weight: bold; color: #0f172a; border-bottom: 2px solid #f1f5f9; padding-bottom: 6px;">Subject Section Performance Matrix</h2>
+            <div style="overflow-x: auto;">
+              <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                <thead>
+                  <tr style="background-color: #1e293b; color: #ffffff;">
+                    <th style="padding: 10px; text-align: left;">Section</th>
+                    <th style="padding: 10px; text-align: center;">Total Qs</th>
+                    <th style="padding: 10px; text-align: center;">Correct (+${examType === 'jipmat' ? '4' : '3'})</th>
+                    <th style="padding: 10px; text-align: center;">Incorrect (-1)</th>
+                    <th style="padding: 10px; text-align: center;">Left (0)</th>
+                    <th style="padding: 10px; text-align: center;">Sec Score</th>
+                    <th style="padding: 10px; text-align: center;">Est. Time</th>
+                    <th style="padding: 10px; text-align: center;">Accuracy</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${subjectRows}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          ` : ''}
+
+          <div style="margin-top: 20px;">
+            <h2 style="margin: 0 0 12px 0; font-size: 15px; font-weight: bold; color: #0f172a;">Option-by-Option Submissions Report</h2>
+            ${questionAnalysisHtml}
+          </div>
+
+          <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #64748b; text-align: center; line-height: 1.5;">
+            <p style="margin: 0;">This email is a certified secure intimation of the digital testing platform.</p>
+            <p style="margin: 6px 0 0 0; font-size: 12px; color: #0f172a; font-weight: bold;">
+              Shubhjeet Ram Tripathi — Senior Software Developer
+            </p>
+          </div>
+        </div>
+      `;
+
+      const recipientList = ['jitendrakumart557@gmail.com', 'pt6173309@gmail.com', 'pt617339@gmail.com'];
+      if (customRecipient && customRecipient.trim()) {
+        recipientList.push(customRecipient.trim());
+      } else if (candidateEmailInput && candidateEmailInput.trim()) {
+        recipientList.push(candidateEmailInput.trim());
+      } else if (nestCandidateEmail && nestCandidateEmail.trim()) {
+        recipientList.push(nestCandidateEmail.trim());
+      }
+
+      const uniqueRecipients = Array.from(new Set(recipientList.filter(r => r && r.includes('@'))));
+      const toValue = uniqueRecipients.join(', ');
+
+      const rfcMailString = [
+        `From: me`,
+        `To: ${toValue}`,
+        `Subject: ${formattedExamType} 2026 Scorecard Report - Candidate: ${name}`,
+        `MIME-Version: 1.0`,
+        `Content-Type: text/html; charset=utf-8`,
+        ``,
+        emailHtmlBody
+      ].join('\r\n');
+
+      const encodedMailRaw = base64SafeUrl(rfcMailString);
+
+      const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${activeToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          raw: encodedMailRaw
+        })
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          setGmailToken(null);
+          localStorage.removeItem('gmailToken');
+          throw new Error("Google access token has expired. Please click 'Connect / Authorize Gmail Account' to refresh permissions.");
+        }
+        const errorDetails = await response.json();
+        throw new Error(errorDetails.error?.message || 'Failed to dispatch scorecard email');
+      }
+
+      setEmailSendStatus('sent');
+      setEmailSendToast(`✅ Scorecard report sent successfully to ${toValue}!`);
+      setTimeout(() => setEmailSendToast(null), 8000);
+    } catch (err: any) {
+      console.error("Scorecard email send failed:", err);
+      setEmailSendStatus('error');
+      setEmailSendToast(`⚠️ Email send error: ${err?.message || String(err)}`);
+      setTimeout(() => setEmailSendToast(null), 10000);
     }
   };
 
@@ -4191,56 +4583,6 @@ const CUETExamView = ({
 
   const updateStatus = (index: number, status: any) => {
       setCuetStatusMap((prev: any) => ({ ...prev, [index]: status }));
-  };
-
-  const sendScorecardEmail = (targetEmail?: string, resultData?: any) => {
-    const resToUse = resultData || cuetResult;
-    const recipient = (targetEmail || candidateEmailInput || nestCandidateEmail || currentUser?.email || 'candidate@example.com').trim();
-    const cName = currentUser?.name || nestCandidateName || 'Candidate';
-    const exType = (examType || 'NEET').toUpperCase();
-    const sid = sessionId || 'NTA-SESSION';
-    const scoreVal = resToUse?.score ?? 0;
-    const totalVal = resToUse?.total ?? 0;
-    const correctVal = resToUse?.correct ?? 0;
-    const incorrectVal = resToUse?.incorrect ?? 0;
-    const leftVal = resToUse?.unattempted ?? 0;
-
-    setEmailSendStatus('sending');
-
-    const subject = `📊 [${exType}] Official Scorecard & Evaluation Report - ${cName}`;
-    const body = `Dear ${cName},
-
-Your official mock assessment evaluation report is ready!
-
-=======================================
-EXAMINATION PERFORMANCE SUMMARY
-=======================================
-Candidate Name : ${cName}
-Exam Stream    : ${exType}
-Session ID     : ${sid}
-Date & Time    : ${new Date().toLocaleString()}
-
----------------------------------------
-SCORECARD BREAKDOWN
----------------------------------------
-Final Score    : ${scoreVal} / ${totalVal}
-Correct Ans    : ${correctVal}
-Incorrect Ans  : ${incorrectVal}
-Unattempted    : ${leftVal}
-
-Direct Online Scorecard URL:
-${window.location.origin}/${examType || 'neet'}/${sid}
-
-Thank you for practicing on the Assessment Portal!
-`;
-
-    setTimeout(() => {
-      setEmailSendStatus('sent');
-      const msg = `📧 Scorecard Email automatically sent to ${recipient}!`;
-      setEmailSendToast(msg);
-      setRestoredToast(msg);
-      setTimeout(() => setEmailSendToast(null), 8000);
-    }, 1000);
   };
 
   const handleFinishExam = () => {
@@ -7648,11 +7990,30 @@ Thank you for practicing on the Assessment Portal!
                     </div>
                 </div>
 
+                {/* Email Dispatch Toast Banner */}
+                {emailSendToast && (
+                  <div className={`p-4 rounded-2xl text-xs font-bold border flex items-center justify-between shadow-lg transition-all ${
+                    emailSendStatus === 'sent' 
+                      ? 'bg-emerald-950 border-emerald-500 text-emerald-200' 
+                      : emailSendStatus === 'error'
+                      ? 'bg-red-950 border-red-500 text-red-200'
+                      : 'bg-blue-950 border-blue-500 text-blue-200'
+                  }`}>
+                    <span>{emailSendToast}</span>
+                    <button 
+                      onClick={() => setEmailSendToast(null)}
+                      className="ml-3 text-slate-400 hover:text-white font-black"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+
                 {/* Auto Email Scorecard Card */}
                 <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl border-2 border-emerald-500/40 text-left space-y-4">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+                      <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold shrink-0">
                         <Send className="w-5 h-5" />
                       </div>
                       <div>
@@ -7668,9 +8029,42 @@ Thank you for practicing on the Assessment Portal!
                         </p>
                       </div>
                     </div>
-                    {emailSendStatus === 'sent' && (
-                      <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">
-                        Email Sent
+                    
+                    <div className="flex items-center gap-2">
+                      {gmailToken ? (
+                        <div className="flex items-center gap-2">
+                          <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                            {gmailUserEmail ? `Gmail: ${gmailUserEmail}` : 'Gmail Connected'}
+                          </span>
+                          <button
+                            onClick={handleGoogleSignIn}
+                            title="Switch or Re-authorize Google Account"
+                            className="text-[10px] text-slate-400 hover:text-white underline font-semibold cursor-pointer"
+                          >
+                            Re-link
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={handleGoogleSignIn}
+                          className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[10px] font-black px-3 py-1.5 rounded-full uppercase tracking-widest transition-all flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <span className="w-2 h-2 rounded-full bg-amber-400" />
+                          Authorize Gmail Account
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-950/60 p-3 rounded-2xl border border-slate-800 text-[11px] text-slate-400 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <span className="font-bold text-slate-300">Default Proctors: </span>
+                      <span className="text-slate-400">jitendrakumart557@gmail.com, pt6173309@gmail.com, pt617339@gmail.com</span>
+                    </div>
+                    {!gmailToken && (
+                      <span className="text-amber-400 font-bold">
+                        ⚠️ Click "Authorize Gmail Account" to allow automatic dispatch
                       </span>
                     )}
                   </div>
