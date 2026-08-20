@@ -1657,22 +1657,31 @@ const AppContent: React.FC = () => {
   };
 
   // AI Model Configuration
-  const GEMINI_PRIMARY_MODEL = "gemini-3.7-flash";
-  const GEMINI_FALLBACK_MODEL = "gemini-2.5-flash";
+  const GEMINI_MODELS = ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite"];
 
   const generateGeminiContent = async (ai: any, parts: any[]) => {
-    try {
-      return await ai.models.generateContent({
-        model: GEMINI_PRIMARY_MODEL,
-        contents: [{ parts }],
-      });
-    } catch (primaryError: any) {
-      console.warn(`Primary Gemini model ${GEMINI_PRIMARY_MODEL} error, attempting fallback ${GEMINI_FALLBACK_MODEL}:`, primaryError);
-      return await ai.models.generateContent({
-        model: GEMINI_FALLBACK_MODEL,
-        contents: [{ parts }],
-      });
+    let lastError: any = null;
+    for (const model of GEMINI_MODELS) {
+      try {
+        return await ai.models.generateContent({
+          model,
+          contents: parts,
+        });
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`Gemini model ${model} encountered error, trying next fallback:`, err);
+        // Also try wrapped format if needed
+        try {
+          return await ai.models.generateContent({
+            model,
+            contents: [{ parts }],
+          });
+        } catch (nestedErr: any) {
+          lastError = nestedErr;
+        }
+      }
     }
+    throw lastError || new Error("Failed to generate content with available Gemini AI models.");
   };
 
   // Auto-fill candidate name
