@@ -1,5 +1,8 @@
 {
   "name": "CUET 2026 Prediction & Practice Hub",
   "description": "Professional examination simulation center for CUET, NEET, and NEST with AI-powered question extraction, high-contrast practice dashboard, and performance report generation.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

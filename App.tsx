@@ -1656,6 +1656,25 @@ const AppContent: React.FC = () => {
     return [];
   };
 
+  // AI Model Configuration
+  const GEMINI_PRIMARY_MODEL = "gemini-3.7-flash";
+  const GEMINI_FALLBACK_MODEL = "gemini-2.5-flash";
+
+  const generateGeminiContent = async (ai: any, parts: any[]) => {
+    try {
+      return await ai.models.generateContent({
+        model: GEMINI_PRIMARY_MODEL,
+        contents: [{ parts }],
+      });
+    } catch (primaryError: any) {
+      console.warn(`Primary Gemini model ${GEMINI_PRIMARY_MODEL} error, attempting fallback ${GEMINI_FALLBACK_MODEL}:`, primaryError);
+      return await ai.models.generateContent({
+        model: GEMINI_FALLBACK_MODEL,
+        contents: [{ parts }],
+      });
+    }
+  };
+
   // Auto-fill candidate name
   const candidateName = "PALLAVI";
 
@@ -1682,10 +1701,7 @@ const AppContent: React.FC = () => {
       
       Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ parts: [{ text: prompt }] }],
-      });
+      const response = await generateGeminiContent(ai, [{ text: prompt }]);
       const text = response.text || '';
       const extracted = parseQuestionsJson(text);
       if (extracted.length > 0) {
@@ -1736,10 +1752,7 @@ const AppContent: React.FC = () => {
       
       Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ parts: [{ text: prompt }, fileData] }],
-      });
+      const response = await generateGeminiContent(ai, [{ text: prompt }, fileData]);
       const text = response.text || '';
       const extracted = parseQuestionsJson(text);
       if (extracted.length > 0) {
@@ -1817,10 +1830,7 @@ const AppContent: React.FC = () => {
       
       Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ parts: [{ text: prompt }] }],
-      });
+      const response = await generateGeminiContent(ai, [{ text: prompt }]);
       const text = response.text || '';
       const extracted = parseQuestionsJson(text);
       if (extracted.length > 0) {
@@ -1871,10 +1881,7 @@ const AppContent: React.FC = () => {
       
       Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ parts: [{ text: prompt }, fileData] }],
-      });
+      const response = await generateGeminiContent(ai, [{ text: prompt }, fileData]);
       const text = response.text || '';
       const extracted = parseQuestionsJson(text);
       if (extracted.length > 0) {
@@ -1945,10 +1952,7 @@ const AppContent: React.FC = () => {
       
       Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ parts: [{ text: prompt }] }],
-      });
+      const response = await generateGeminiContent(ai, [{ text: prompt }]);
       const text = response.text || '';
       const extracted = parseQuestionsJson(text);
       if (extracted.length > 0) {
@@ -1996,10 +2000,7 @@ const AppContent: React.FC = () => {
       
       Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ parts: [{ text: prompt }, fileData] }],
-      });
+      const response = await generateGeminiContent(ai, [{ text: prompt }, fileData]);
       const text = response.text || '';
       const extracted = parseQuestionsJson(text);
       if (extracted.length > 0) {
@@ -2049,10 +2050,7 @@ const AppContent: React.FC = () => {
 
       Return ONLY a JSON array of these objects: [{"subject": "Physics", "question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ parts: [{ text: prompt }, fileData] }],
-      });
+      const response = await generateGeminiContent(ai, [{ text: prompt }, fileData]);
       const text = response.text || '';
       const extracted = parseQuestionsJson(text);
       if (extracted.length > 0) {
@@ -2105,10 +2103,7 @@ const AppContent: React.FC = () => {
 
       Return ONLY a JSON array of these objects: [{"subject": "Physics", "question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If none found, return [].`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ parts: [{ text: prompt }] }],
-      });
+      const response = await generateGeminiContent(ai, [{ text: prompt }]);
       const text = response.text || '';
       const extracted = parseQuestionsJson(text);
       if (extracted.length > 0) {
@@ -2189,10 +2184,7 @@ const AppContent: React.FC = () => {
       
       Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]. If no questions are found, return [].`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ parts: [{ text: prompt }] }],
-      });
+      const response = await generateGeminiContent(ai, [{ text: prompt }]);
       const text = response.text || '';
       const extractedQuestions = parseQuestionsJson(text);
       if (extractedQuestions.length > 0) {
@@ -2248,10 +2240,7 @@ const AppContent: React.FC = () => {
       
       Return ONLY a JSON array of these objects: [{"question": "...", "options": ["...", "...", "...", "..."], "diagramSvg": "...", "diagramTitle": "...", "correct": 0}]`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ parts: [{ text: prompt }, imageData] }],
-      });
+      const response = await generateGeminiContent(ai, [{ text: prompt }, imageData]);
       const text = response.text || '';
       const extractedQuestions = parseQuestionsJson(text);
       if (extractedQuestions.length > 0) {
@@ -2426,6 +2415,250 @@ const CUETExamView = ({
   const [emailSendStatus, setEmailSendStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [emailSendToast, setEmailSendToast] = useState<string | null>(null);
 
+  // Gmail integration states
+  const [gmailToken, setGmailToken] = useState<string | null>(() => localStorage.getItem('gmailToken'));
+  const [gmailUserEmail, setGmailUserEmail] = useState<string>(() => localStorage.getItem('gmailUserEmail') || '');
+  const [gmailUserName, setGmailUserName] = useState<string>(() => localStorage.getItem('gmailUserName') || '');
+  const [sendingEmail, setSendingEmail] = useState<boolean>(false);
+  const [emailSentStatus, setEmailSentStatus] = useState<'idle' | 'success' | 'failure' | 'sending'>('idle');
+  const [emailErrorMsg, setEmailErrorMsg] = useState<string>('');
+  const [gmailAuthError, setGmailAuthError] = useState<string | null>(null);
+  const sentEventEmailsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    // Attempt to load the shared admin gmail token from Firestore so normal users don't need to authorize
+    const loadSharedGmailToken = async () => {
+      try {
+        const docSnap = await getDoc(doc(db, "adminConfig", "gmail"));
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data && data.accessToken) {
+            setGmailToken(data.accessToken);
+            if (data.email) setGmailUserEmail(data.email);
+            if (data.name) setGmailUserName(data.name);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch shared gmail token from Firestore, falling back to local:", err);
+      }
+    };
+    loadSharedGmailToken();
+  }, []);
+
+  const base64SafeUrl = (str: string) => {
+    const utf8Bytes = new TextEncoder().encode(str);
+    let binary = '';
+    const len = utf8Bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(utf8Bytes[i]);
+    }
+    return btoa(binary)
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+  };
+
+  const sendSessionEventEmail = async (params: {
+    event: 'start' | 'resume';
+    targetSessionId?: string;
+    targetExamType?: string;
+    targetActiveQ?: number;
+    targetTimeLeft?: number;
+    targetQuestions?: any[];
+    targetAnswers?: any;
+    candidateNameOverride?: string;
+    candidateEmailOverride?: string;
+  }) => {
+    try {
+      const sid = params.targetSessionId || sessionId;
+      if (!sid) return;
+
+      const actQ = params.targetActiveQ !== undefined ? params.targetActiveQ : (activeQuestion || 0);
+      const dedupeKey = `${params.event}_${sid}_${actQ}`;
+      if (sentEventEmailsRef.current.has(dedupeKey)) {
+        return;
+      }
+      sentEventEmailsRef.current.add(dedupeKey);
+
+      let token = gmailToken || localStorage.getItem('gmailToken');
+      if (!token) {
+        try {
+          const docSnap = await getDoc(doc(db, "adminConfig", "gmail"));
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            if (data && data.accessToken) {
+              token = data.accessToken;
+              setGmailToken(data.accessToken);
+              if (data.email) setGmailUserEmail(data.email);
+              if (data.name) setGmailUserName(data.name);
+            }
+          }
+        } catch (dbErr) {
+          console.warn("Could not load admin gmail token from Firestore:", dbErr);
+        }
+      }
+
+      if (!token) {
+        console.warn(`No active Gmail token found for ${params.event} email intimation.`);
+        return;
+      }
+
+      const examT = params.targetExamType || examType || 'neet';
+      const formattedExamType = examT === 'nest' ? 'NEST Exam' : examT === 'jipmat' ? 'JIPMAT' : examT === 'neet' ? 'NEET UG' : 'CUET';
+      const name = params.candidateNameOverride || currentUser?.name || nestCandidateName || "PALLAVI";
+      const rollNo = nestUserId || "CUET2026-X7Y";
+      const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+      const resumeUrl = `${window.location.origin}/${examT}/${sid}`;
+      const qList = params.targetQuestions || cuetQuestions || [];
+      const totalQ = qList.length || 20;
+      const ansObj = params.targetAnswers || cuetAnswers || {};
+      const attemptedCount = Object.keys(ansObj).length;
+      const timeLeftSec = params.targetTimeLeft !== undefined ? params.targetTimeLeft : (cuetTimeLeft ?? 3600);
+      const minsRemaining = Math.floor(timeLeftSec / 60);
+      const secsRemaining = Math.round(timeLeftSec % 60);
+
+      const isStart = params.event === 'start';
+      const statusTitle = isStart ? 'Test Session Commenced' : 'Test Session Resumed';
+      const statusBadge = isStart 
+        ? '<span style="background-color: #16a34a; color: #ffffff; padding: 4px 10px; font-size: 11px; font-weight: bold; border-radius: 9999px; text-transform: uppercase;">🟢 Live / Commenced</span>'
+        : '<span style="background-color: #4f46e5; color: #ffffff; padding: 4px 10px; font-size: 11px; font-weight: bold; border-radius: 9999px; text-transform: uppercase;">⚡ Resumed Activity</span>';
+
+      const emailHtmlBody = `
+        <div style="font-family: Arial, sans-serif; background-color: #f8fafc; padding: 24px; color: #1e293b; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px;">
+          <div style="background-color: #1e293b; padding: 24px; text-align: center; border-radius: 12px 12px 0 0; color: #ffffff;">
+            <h1 style="margin: 0; font-size: 20px; font-weight: bold; letter-spacing: -0.5px;">${formattedExamType} 2026</h1>
+            <p style="margin: 4px 0 0 0; font-size: 12px; color: #93c5fd; font-weight: bold; text-transform: uppercase;">Examination Activity Dispatch - ${statusTitle}</p>
+          </div>
+
+          <div style="background-color: #ffffff; border-left: 4px solid ${isStart ? '#16a34a' : '#4f46e5'}; padding: 16px; margin-top: 16px; border-radius: 0 12px 12px 0; background-color: ${isStart ? '#f0fdf4' : '#eef2ff'};">
+            <p style="margin: 0; font-size: 13px; line-height: 1.5; color: ${isStart ? '#166534' : '#312e81'};">
+              <strong>Real-Time Proctor Intimation:</strong> Candidate <strong>${name}</strong> has just ${isStart ? 'started a new examination session' : 'resumed an active examination session'}. Live progress and monitoring details are provided below.
+            </p>
+          </div>
+
+          <div style="background-color: #ffffff; padding: 20px; margin-top: 16px; border-radius: 12px; border: 1px solid #e2e8f0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px; margin-bottom: 12px;">
+              <h2 style="margin: 0; font-size: 15px; font-weight: bold; color: #0f172a;">Session & Candidate Profile</h2>
+              <div>${statusBadge}</div>
+            </div>
+            
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+              <tr>
+                <td style="padding: 6px 0; color: #64748b; width: 42%;"><strong>Candidate Name:</strong></td>
+                <td style="padding: 6px 0; color: #0f172a; font-weight: bold;">${name}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>Roll / Login ID:</strong></td>
+                <td style="padding: 6px 0; color: #0f172a;">${rollNo}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>Exam Stream:</strong></td>
+                <td style="padding: 6px 0; color: #0f172a;">${formattedExamType}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>Session Reference ID:</strong></td>
+                <td style="padding: 6px 0; color: #2563eb; font-family: monospace; font-weight: bold;">${sid}</td>
+              </tr>
+              ${!isStart ? `
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>Resumed at Question:</strong></td>
+                <td style="padding: 6px 0; color: #0f172a; font-weight: bold;">Question ${actQ + 1} of ${totalQ}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>Answers Attempted:</strong></td>
+                <td style="padding: 6px 0; color: #0f172a;">${attemptedCount} / ${totalQ} answered</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>Remaining Duration:</strong></td>
+                <td style="padding: 6px 0; color: #d97706; font-weight: bold;">${minsRemaining}m ${secsRemaining < 10 ? '0' : ''}${secsRemaining}s</td>
+              </tr>
+              ` : `
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>Total Questions:</strong></td>
+                <td style="padding: 6px 0; color: #0f172a;">${totalQ} Questions</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>Total Time Allocated:</strong></td>
+                <td style="padding: 6px 0; color: #0f172a;">60 Minutes (3600 seconds)</td>
+              </tr>
+              `}
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>Timestamp (IST):</strong></td>
+                <td style="padding: 6px 0; color: #0f172a;">${timestamp}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>Proctor Shield:</strong></td>
+                <td style="padding: 6px 0; color: #16a34a; font-weight: bold;">TCS iON Security Shield Enforced</td>
+              </tr>
+            </table>
+          </div>
+
+          <div style="background-color: #ffffff; padding: 20px; margin-top: 16px; border-radius: 12px; border: 1px solid #e2e8f0; text-align: center;">
+            <p style="margin: 0 0 12px 0; font-size: 13px; color: #475569;">
+              Direct live monitoring & session access link:
+            </p>
+            <a href="${resumeUrl}" style="display: inline-block; background-color: #1e293b; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 13px; font-weight: bold; letter-spacing: 0.5px;">
+              🔗 Access Live Test Session &rarr;
+            </a>
+            <p style="margin: 10px 0 0 0; font-size: 11px; color: #94a3b8; font-family: monospace; word-break: break-all;">
+              ${resumeUrl}
+            </p>
+          </div>
+
+          <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #64748b; text-align: center; line-height: 1.5;">
+            <p style="margin: 0;">This email is a certified activity alert dispatched by the digital testing platform.</p>
+            <p style="margin: 6px 0 0 0; font-size: 12px; color: #0f172a; font-weight: bold;">
+              Shubhjeet Ram Tripathi — Senior Software Developer
+            </p>
+          </div>
+        </div>
+      `;
+
+      const recipientList = ['jitendrakumart557@gmail.com', 'pt6173309@gmail.com', 'pt617339@gmail.com'];
+      const candidateEmail = params.candidateEmailOverride || (nestCandidateEmail && nestCandidateEmail.trim());
+      if (candidateEmail && candidateEmail !== 'candidate@example.com' && !recipientList.includes(candidateEmail)) {
+        recipientList.push(candidateEmail);
+      }
+      const toValue = recipientList.join(', ');
+
+      const emailSubject = isStart 
+        ? `[TEST STARTED] ${formattedExamType} 2026 - Candidate: ${name} (Session: ${sid})`
+        : `[TEST RESUMED] ${formattedExamType} 2026 - Candidate: ${name} (Session: ${sid})`;
+
+      const rfcMailString = [
+        `From: me`,
+        `To: ${toValue}`,
+        `Subject: ${emailSubject}`,
+        `MIME-Version: 1.0`,
+        `Content-Type: text/html; charset=utf-8`,
+        ``,
+        emailHtmlBody
+      ].join('\r\n');
+
+      const encodedMailRaw = base64SafeUrl(rfcMailString);
+
+      const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          raw: encodedMailRaw
+        })
+      });
+
+      if (response.ok) {
+        console.log(`Successfully dispatched ${params.event} email intimation to ${toValue}`);
+      } else {
+        const errorData = await response.json();
+        console.warn(`Failed to dispatch ${params.event} email:`, errorData);
+      }
+    } catch (err) {
+      console.warn(`Error during ${params.event} email dispatch:`, err);
+    }
+  };
+
   const generateSessionId = () => {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
     let id = '';
@@ -2567,6 +2800,17 @@ const CUETExamView = ({
       setCuetStatus('finished');
     } else {
       setCuetStatus('exam');
+      // Trigger RESUME email intimation
+      sendSessionEventEmail({
+        event: 'resume',
+        targetSessionId: data.sessionId,
+        targetExamType: data.examType,
+        targetActiveQ: targetQ,
+        targetTimeLeft: data.cuetTimeLeft,
+        targetQuestions: data.cuetQuestions,
+        targetAnswers: data.cuetAnswers,
+        candidateNameOverride: data.candidateName
+      });
     }
 
     try {
@@ -2666,6 +2910,15 @@ const CUETExamView = ({
     }
 
     await saveTestSession(newId, 'exam');
+
+    // Trigger START email intimation
+    sendSessionEventEmail({
+      event: 'start',
+      targetSessionId: newId,
+      targetExamType: selectedType,
+      targetQuestions: cuetQuestions,
+      candidateNameOverride: currentUser?.name || nestCandidateName || "PALLAVI"
+    });
 
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -2790,6 +3043,18 @@ const CUETExamView = ({
             } else {
               setCuetStatus('exam');
               setRestoredToast(`⚡ Test Session Restored! Continued directly from Question ${targetQ + 1}`);
+
+              // Trigger RESUME email intimation
+              sendSessionEventEmail({
+                event: 'resume',
+                targetSessionId: sidFromUrl,
+                targetExamType: data.examType,
+                targetActiveQ: targetQ,
+                targetTimeLeft: data.cuetTimeLeft,
+                targetQuestions: data.cuetQuestions,
+                targetAnswers: data.cuetAnswers,
+                candidateNameOverride: data.candidateName
+              });
             }
 
             try {
@@ -2861,48 +3126,6 @@ const CUETExamView = ({
   const [cDegree, setCDegree] = useState<string>('degree'); // 'degree' or 'radians'
 
   const isDegrees = cDegree === 'degree';
-
-  // Gmail integration states
-  const [gmailToken, setGmailToken] = useState<string | null>(() => localStorage.getItem('gmailToken'));
-  const [gmailUserEmail, setGmailUserEmail] = useState<string>(() => localStorage.getItem('gmailUserEmail') || '');
-  const [gmailUserName, setGmailUserName] = useState<string>(() => localStorage.getItem('gmailUserName') || '');
-
-  useEffect(() => {
-    // Attempt to load the shared admin gmail token from Firestore so normal users don't need to authorize
-    const loadSharedGmailToken = async () => {
-      try {
-        const docSnap = await getDoc(doc(db, "adminConfig", "gmail"));
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          if (data && data.accessToken) {
-            setGmailToken(data.accessToken);
-            if (data.email) setGmailUserEmail(data.email);
-            if (data.name) setGmailUserName(data.name);
-          }
-        }
-      } catch (err) {
-        console.warn("Could not fetch shared gmail token from Firestore, falling back to local:", err);
-      }
-    };
-    loadSharedGmailToken();
-  }, []);
-  const [sendingEmail, setSendingEmail] = useState<boolean>(false);
-  const [emailSentStatus, setEmailSentStatus] = useState<'idle' | 'success' | 'failure' | 'sending'>('idle');
-  const [emailErrorMsg, setEmailErrorMsg] = useState<string>('');
-  const [gmailAuthError, setGmailAuthError] = useState<string | null>(null);
-
-  const base64SafeUrl = (str: string) => {
-    const utf8Bytes = new TextEncoder().encode(str);
-    let binary = '';
-    const len = utf8Bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(utf8Bytes[i]);
-    }
-    return btoa(binary)
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=+$/, '');
-  };
 
   const sendResultEmail = async (token: string, results: any) => {
     if (!results) return;
