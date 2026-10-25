@@ -30,6 +30,14 @@ service cloud.firestore {
     match /testSessions/{allPaths=**} {
       allow read, write: if true;
     }
+
+    match /quizzes/{allPaths=**} {
+      allow read, write: if true;
+    }
+
+    match /quiz_submissions/{allPaths=**} {
+      allow read, write: if true;
+    }
     
     match /_connection_test/{testId} {
       allow read, write: if isAuthenticated();
